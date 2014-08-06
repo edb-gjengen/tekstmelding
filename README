@@ -1,0 +1,7 @@
+Dependencies:
+	sudo apt-get install libmysqlclient-dev python-dev
+
+Setup environment:
+	tekstmelding$ virtualenv venv
+	tekstmelding$ . venv/bin/activate
+	(venv)tekstmelding$ pip install -r requirements.txt
