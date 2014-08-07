@@ -5,25 +5,32 @@ import datetime
 
 import config
 
+app = Flask(__name__)
+app.config.from_object('config')
+
 db = MySQLdb.connect(
-	host	= config.DATABASE_HOST,
-	user	= config.DATABASE_USER,
-	passwd	= config.DATABASE_PASS,
-	db		= config.DATABASE_NAME,
+	host	= app.config['DATABASE_HOST'],
+	user	= app.config['DATABASE_USER'],
+	passwd	= app.config['DATABASE_PASS'],
+	db		= app.config['DATABASE_NAME'],
 	cursorclass = MySQLdb.cursors.DictCursor)
 
 cur = db.cursor()
-
-app = Flask(__name__)
 
 @app.route('/')
 def main():
 	return 'Tekstmelding er bezt!'
 
 @app.route('/callback')
-def callack():
-	return 'Callback liksom.'
+def callback():
+	gsm = request.args.get('gsm', None)
+	operator = request.args.get('operator', None)
+	kodeord = request.args.get('kodeord', None)
+	tekst = request.args.get('tekst', None)
+	kortnr = request.args.get('kortnr', None)
+	ip = request.remote_addr
+
+	return 'Got: %s' % (", ".join([('%s="%s"' % (k, v)) for k, v in request.args.items()]))
 
 if __name__ == '__main__':
-	app.debug = config.DEBUG
 	app.run()
