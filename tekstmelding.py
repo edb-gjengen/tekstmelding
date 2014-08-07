@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 import MySQLdb
 import MySQLdb.cursors
 import datetime
@@ -18,7 +18,12 @@ app = Flask(__name__)
 
 @app.route('/')
 def main():
-    return 'Tekstmelding er bezt!'
+	return 'Tekstmelding er bezt!'
+
+@app.route('/callback')
+def callack():
+	return 'Callback liksom.'
 
 if __name__ == '__main__':
-    app.run()
+	app.debug = config.DEBUG
+	app.run()

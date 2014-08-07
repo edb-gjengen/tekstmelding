@@ -1,3 +1,5 @@
+DEBUG = True
+
 DATABASE_HOST = 'localhost'
 DATABASE_USER = 'inside'
 DATABASE_PASS = ''
