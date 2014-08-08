@@ -39,8 +39,7 @@ def query_db(query, args=(), one=False):
 	"""
 	cur = get_db().cursor()
 	if app.config['DEBUG']:
-		app.logger.debug("Query: %s", query)
-		app.logger.debug("Args: %s", args)
+		app.logger.debug("Query: %s\nArgs: %s", query, args)
 	cur.execute(query, args)
 	rv = cur.fetchall()
 	cur.close()
@@ -55,6 +54,14 @@ def get_user_by_phone(number):
 		[number], one=True)
 	return user
 
+def log_incoming(userid, gsm, codeword, message, operator, shortno, action, ip, simulation):
+	query_db("""
+		INSERT INTO din_sms_received
+			(userid, gsm, codeword, message, operator, shortno, action, IP, simulation)
+		VALUES
+			(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+	""", [userid, gsm, codeword, message, operator, shortno, action, ip, simulation])
+
 @app.route('/')
 def main():
 	return 'Tekstmelding er bezt!'
@@ -63,9 +70,9 @@ def main():
 def callback():
 	gsm      = request.args.get('gsm', None)
 	operator = request.args.get('operator', None)
-	kodeord  = request.args.get('kodeord', None)
-	tekst    = request.args.get('tekst', None)
-	kortnr   = request.args.get('kortnr', None)
+	codeword = request.args.get('kodeord', None)
+	message  = request.args.get('tekst', None)
+	shortno  = request.args.get('kortnr', None)
 	ip       = request.remote_addr
 
 	if not gsm.isdigit():
@@ -73,11 +80,21 @@ def callback():
 		abort(400) # Bad Request
 
 	# We could use the country code from 'operator' here,
-	# but can we can't receive messages from abroad. Right?
+	# but can we can't receive messages from operators. Right?
 	user = get_user_by_phone("+47%s" % gsm)
-	return str(user.items()) if user else 'None'
 
-	#return 'Got: %s' % (", ".join([('%s="%s"' % (k, v)) for k, v in request.args.items()]))
+	log_incoming(
+		userid     = int(user['id']) if user else None,
+		gsm        = gsm,
+		codeword   = codeword,
+		message    = message,
+		operator   = operator,
+		shortno    = shortno,
+		action     = 'no_action',
+		ip         = ip,
+		simulation = 0)
+
+	return str(user.items()) if user else 'None'
 
 if __name__ == '__main__':
 	app.run()
