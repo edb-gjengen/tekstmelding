@@ -31,7 +31,7 @@ def get_db():
 
 @app.teardown_appcontext
 def close_db(error):
-	"""Closes the database again at the end of the request."""
+	"""Closes the database connection at the end of the request."""
 	if hasattr(g, 'db'):
 		g.db.close()
 
@@ -58,7 +58,8 @@ def query_db(query, args=(), one=False, lastrowid=False):
 
 def get_user_by_phone(number):
 	user = query_db("""
-		SELECT user.*
+		SELECT user.*,
+		       (CASE WHEN (user.expires IS NULL) THEN 1 ELSE 0 END) AS expires_lifelong
 		FROM din_user user, din_userphonenumber phone
 		WHERE phone.number = %s AND
 		      user.id = phone.user_id""",
@@ -117,7 +118,33 @@ def callback():
 		app.logger.debug("cursor.lastrowid: %s", id_incoming_sms)
 
 	if user:
-	    return jsonify(user.items())
+		# A friendly reminder about how the 'expires' column works:
+		# 	NULL means the membership should never expire
+		#	0000-00-00 is the default and means the user has never had a membership
+		#	YYYY-MM-DD is the day the membership will or has expired
+		#
+		# datetime.date does not accept the date 0000-00-00, instead we end
+		# up with None. As a workaround we do the NULL comparison with SQL
+		# and store the result in 'expires_lifelong'.
+		expires = user.get('expires', None)
+		expires_lifelong = user.get('expires_lifelong', None)
+
+		# Does this user have a lifelong membership?
+		if expires_lifelong:
+			app.logger.debug("You have lifelong membership.")
+
+		# No need to renew non-expired memberships.
+		elif type(expires) is datetime.date and expires > datetime.date.today():
+			app.logger.debug("Your membership has not expired yet.")
+
+		# Should we renew?
+		elif not expires or (type(expires) is datetime.date and expires < datetime.date.today()):
+			app.logger.debug("Your membership has been renewed.")
+
+		else:
+			assert False, "What a trainwreck, we shouldn't be here"
+
+		return jsonify(user.items())
 	else:
 	    result = {'result': 'No existing member.', 'action': 'new_membership_send_code'}
 	    activation_code = generate_activation_code()
