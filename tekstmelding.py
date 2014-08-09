@@ -66,21 +66,23 @@ def get_user_by_phone(number):
 		[number], one=True)
 	return user
 
-def log_incoming(userid, gsm, codeword, message, operator, shortno, action, ip, simulation):
+def log_incoming(**kwargs):
+	app.logger.debug(kwargs)
 	return query_db("""
 		INSERT INTO din_sms_received
 			(userid, gsm, codeword, message, operator, shortno, action, IP, simulation)
 		VALUES
-			(%s, %s, %s, %s, %s, %s, %s, %s, %s)
-	""", [userid, gsm, codeword, message, operator, shortno, action, ip, simulation], lastrowid=True)
+			(%(userid)s, %(gsm)s, %(codeword)s, %(message)s, %(operator)s, %(shortno)s, %(action)s, %(ip)s, %(simulation)s)
+	""", kwargs, lastrowid=True)
 
-def log_sent(response_to, msgid, sender, receiver, countrycode, message, operator, codeword, billing_price, use_dlr, simulation, activation_code):
+def log_sent(**kwargs):
 	query_db("""
 		INSERT INTO din_sms_sent
 			(response_to, msgid, sender, receiver, countrycode, message, operator, codeword, billing_price, use_dlr, simulation, activation_code)
 		VALUES
-			(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-	""", [response_to, msgid, sender, receiver, countrycode, message, operator, codeword, billing_price, use_dlr, simulation, activation_code])
+			(%(response_to)s, %(msgid)s, %(sender)s, %(receiver)s, %(countrycode)s, %(message)s,
+			 %(operator)s, %(codeword)s, %(billing_price)s, %(use_dlr)s, %(simulation)s, %(activation_code)s)
+	""", kwargs)
 
 @app.route('/')
 def main():
