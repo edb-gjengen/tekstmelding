@@ -44,8 +44,7 @@ def query_db(query, args=(), one=False, lastrowid=False):
 	assert not (one and lastrowid)
 
 	cur = get_db().cursor()
-	if app.config['DEBUG']:
-		app.logger.debug("Query: %s\nArgs: %s", query, args)
+	app.logger.debug("Query: %s\nArgs: %s", query, args)
 	cur.execute(query, args)
 
 	if lastrowid:
@@ -116,8 +115,7 @@ def callback():
 		ip         = ip,
 		simulation = 0)
 
-	if app.config['DEBUG']:
-		app.logger.debug("cursor.lastrowid: %s", id_incoming_sms)
+	app.logger.debug("cursor.lastrowid: %s", id_incoming_sms)
 
 	if user:
 		# A friendly reminder about how the 'expires' column works:
@@ -133,15 +131,16 @@ def callback():
 
 		# Does this user have a lifelong membership?
 		if expires_lifelong:
-			app.logger.debug("You have lifelong membership.")
+			app.logger.info("Membership of user_id:%s gsm:%s never expires", user['id'], gsm)
 
 		# No need to renew non-expired memberships.
 		elif type(expires) is datetime.date and expires > datetime.date.today():
-			app.logger.debug("Your membership has not expired yet.")
+			app.logger.info("Membership of user_id:%s gsm:%s had not expired yet", user['id'], gsm)
 
 		# Should we renew?
 		elif not expires or (type(expires) is datetime.date and expires < datetime.date.today()):
-			app.logger.debug("Your membership has been renewed.")
+			new_expire = datetime.date.today() + datetime.timedelta(days=365)
+			app.logger.info("Membership of user_id:%s gsm:%s renewed to %s", user['id'], gsm, new_expire)
 
 		else:
 			assert False, "What a trainwreck, we shouldn't be here"
