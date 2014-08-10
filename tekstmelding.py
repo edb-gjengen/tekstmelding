@@ -187,5 +187,9 @@ def callback():
 
 		return jsonify(result)
 
+@app.route('/dlr')
+def dlr():
+	return ''
+
 if __name__ == '__main__':
 	app.run()

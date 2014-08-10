@@ -4,3 +4,32 @@ DATABASE_HOST = 'localhost'
 DATABASE_USER = 'inside'
 DATABASE_PASS = ''
 DATABASE_NAME = 'inside'
+
+
+
+## Eurobate HTTP PUSH ##
+########################
+
+# Endpoint for bulk messages
+EB_URL = 'http://dio.eurobate.com/push.php'
+
+# Endpoint for billing messages
+EB_PAYURL = 'http://dio.eurobate.com/push2.php'
+
+# Our endpoint for delivery reports
+EB_DLR = 'http://tekstmelding.neuf.no/dlr'
+
+# Our Eurobate username
+EB_USER = ''
+
+# Our Eurobate password
+EB_PASSWORD = ''
+
+# This shows up as the sender of bulk text messages
+EB_SENDER_DNS = 'DNS'
+
+# This shows up as the sender of billing text messages
+EB_SENDER_BILLING = '2090'
+
+# Set to 1 to simulate message sending, 0 in production
+EB_SIMULATE = 1
