@@ -5,3 +5,10 @@ Setup environment:
 	tekstmelding$ virtualenv venv
 	tekstmelding$ . venv/bin/activate
 	(venv)tekstmelding$ pip install -r requirements.txt
+
+Create a config file:
+	tekstmelding$ cp config.py.sample config.py
+	# Edit config.py with your favorite editor
+
+Run the server:
+	(venv)tekstmelding$ python tekstmelding.py
