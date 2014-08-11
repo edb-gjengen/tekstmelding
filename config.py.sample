@@ -5,6 +5,8 @@ DATABASE_USER = 'inside'
 DATABASE_PASS = ''
 DATABASE_NAME = 'inside'
 
+MEMBERSHIP_PRICE_KR = 1
+
 
 ## Eurobate HTTP PUSH ##
 ########################

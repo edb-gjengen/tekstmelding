@@ -141,8 +141,10 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 
 	# The strings in this file are in utf-8, encode to latin-1 before sending
 	try:
-		message = message.decode('utf-8').encode('latin-1', 'ignore')
+		assert type(message) == unicode
+		message = message.encode('latin-1', 'ignore')
 	except:
+		app.logger.warning("Unicode woes: %s", sys.exc_info())
 		# Oh, never mind, let's try to send it anyway.
 		pass
 
@@ -188,16 +190,19 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 
 	app.logger.debug("Hit URL: %s\nGot result.text: %s", result.url, result.text)
 
+	msgid = 0
 	response = result.text.split(' ')
 	if response[:3] == ['Meldingen', 'er', 'sendt']:
-		if billing:
-			msgid = response[3:4]
+		if billing and response[3:4] and response[3:4][0].isdigit():
+			msgid = int(response[3:4][0])
+		if billing and msgid == 0:
+			app.logger.warning("Did not get a msgid from Eurobate when billing as response to smsid:%s", response_to)
 	else:
 		app.logger.error("Message (response_to:%s) was not sent. Eurobate told us: %s", response_to, result.text)
 		return False
 
 	log_sent(
-		response_to = response_to if response_to else 'NULL',
+		response_to = response_to if response_to else 0,
 		msgid = msgid if billing else 0,
 		sender = params['avsender'],
 		receiver = gsm,
@@ -206,7 +211,8 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 		operator = params['operator'] if billing else 'NULL',
 		codeword = params['kodeord'] if billing else 'NULL',
 		billing_price = params['ore'] if billing else 0,
-		use_dlr = 1 if billing else 0,
+		#use_dlr = 1 if billing else 0,
+		use_dlr = 0,
 		simulation = 1 if app.config['EB_SIMULATE'] else 0,
 		activation_code = activation_code if activation_code else 'NULL')
 
@@ -266,7 +272,7 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 
 	message = u"Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? medlem@studentersamfundet.no" % ({
 		'name': get_full_name(user),
-		'new_expire': str(new_expire).encode('utf-8'),
+		'new_expire': str(new_expire),
 	})
 
 	msgid = send_sms(
@@ -275,7 +281,7 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 		message = message,
 		operator = operator,
 		billing = True,
-		billing_price = 230 * 100,
+		billing_price = app.config['MEMBERSHIP_PRICE_KR'] * 100,
 	)
 
 	if not msgid:
@@ -290,7 +296,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 
 	activation_code = generate_activation_code()
 
-	message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms?n=%(gsm)s&c=%(activation_code)s" % ({
+	message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: http://s.neuf.no/sms/%(gsm)s/%(activation_code)s" % ({
 		'gsm': gsm,
 		'activation_code': activation_code,
 	})
@@ -302,7 +308,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 		operator = operator,
 		activation_code = activation_code,
 		billing = True,
-		billing_price = 230 * 100,
+		billing_price = app.config['MEMBERSHIP_PRICE_KR'] * 100,
 	)
 
 	if not msgid:
@@ -314,7 +320,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 
 @app.route('/')
 def main():
-	return 'Tekstmelding er bezt!'
+	return 'Tekstmelding!'
 
 @app.route('/callback')
 def callback():
@@ -356,21 +362,17 @@ def callback():
 		if codeword.strip().upper() == 'DNS':
 			if not expired:
 				return notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
-
-			if expired:
+			elif expired:
 				return notify_payment_options_renewal(response_to=smsid, gsm=gsm)
-
-		if codeword.strip().upper() == 'DNSMEDLEM':
+		elif codeword.strip().upper() == 'DNSMEDLEM':
 			if not expired:
 				return notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
-
-			if expired:
+			elif expired:
 				return renew_membership(response_to=smsid, gsm=gsm, user=user, operator=operator)
 	else:
 		if codeword.strip().upper() == 'DNS':
 			return notify_payment_options_new(response_to=smsid, gsm=gsm)
-
-		if codeword.strip().upper() == 'DNSMEDLEM':
+		elif codeword.strip().upper() == 'DNSMEDLEM':
 			return new_membership(response_to=smsid, gsm=gsm, operator=operator)
 
 @app.route('/dlr')
