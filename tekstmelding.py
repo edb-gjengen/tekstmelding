@@ -130,7 +130,19 @@ def get_full_name(user):
 	)
 	return full_name[:50].strip()
 
-def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_price=None, operator=None, activation_code=None):
+def fix_encoding(message):
+	try:
+		assert type(message) == unicode
+		message_latin = message.encode('latin-1', 'ignore')
+	except:
+		message_latin = message
+		app.logger.warning("Unicode woes: %s", sys.exc_info())
+		# Oh, never mind, let's try to send it anyway.
+		pass
+
+	return message
+
+def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=False, billing_price=None, operator=None, activation_code=None):
 	assert gsm
 	assert message
 
@@ -177,30 +189,32 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 
 	app.logger.debug("send_sms params: %s" % params.items())
 
-	endpoint = app.config['EB_PAYURL'] if billing else app.config['EB_URL']
-
-	try:
-		result = requests.get(endpoint, params=params)
-	except:
-		app.logger.error("Caught exception while attempting to contact Eurobate: %s", sys.exc_info())
-		return False
-
-	if result.status_code != requests.codes.ok: # 200
-		app.logger.error("Got status code %s from Eurobate", result.status_code)
-		return False
-
-	app.logger.debug("Hit URL: %s\nGot result.text: %s", result.url, result.text)
-
 	msgid = 0
-	response = result.text.split(' ')
-	if response[:3] == ['Meldingen', 'er', 'sendt']:
-		if billing and response[3:4] and response[3:4][0].isdigit():
-			msgid = int(response[3:4][0])
-		if billing and msgid == 0:
-			app.logger.warning("Did not get a msgid from Eurobate when billing as response to smsid:%s", response_to)
-	else:
-		app.logger.error("Message (response_to:%s) was not sent. Eurobate told us: %s", response_to, result.text)
-		return False
+
+	if not log_only:
+		endpoint = app.config['EB_PAYURL'] if billing else app.config['EB_URL']
+
+		try:
+			result = requests.get(endpoint, params=params)
+		except:
+			app.logger.error("Caught exception while attempting to contact Eurobate: %s", sys.exc_info())
+			return False
+
+		if result.status_code != requests.codes.ok: # 200
+			app.logger.error("Got status code %s from Eurobate", result.status_code)
+			return False
+
+		app.logger.debug("Hit URL: %s\nGot result.text: %s", result.url, result.text)
+		
+		response = result.text.split(' ')
+		if response[:3] == ['Meldingen', 'er', 'sendt']:
+			if billing and response[3:4] and response[3:4][0].isdigit():
+				msgid = int(response[3:4][0])
+			if billing and msgid == 0:
+				app.logger.warning("Did not get a msgid from Eurobate when billing as response to smsid:%s", response_to)
+		else:
+			app.logger.error("Message (response_to:%s) was not sent. Eurobate told us: %s", response_to, result.text)
+			return False
 
 	log_sent(
 		response_to = response_to if response_to else 0,
@@ -228,37 +242,37 @@ def notify_valid_membership(response_to=None, gsm=None, user=None):
 		'app_link': 'http://snappo.com/app',
 	})
 
-	send_sms(response_to=response_to, gsm=gsm, message=message)
+	send_sms(log_only=True, response_to=response_to, gsm=gsm, message=message)
 	app.logger.info("Sent SMS to gsm:%s with proof of membership and link to app", gsm)
 	set_incoming_action(smsid=response_to, action='notify_valid_membership')
-	return 'notify_valid_membership'
+	return fix_encoding(message)
 
 def notify_payment_options_new(response_to=None, gsm=None):
 	assert gsm
 
 	message = u"Du kan kjøpe medlemskap via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
-	send_sms(response_to=response_to, gsm=gsm, message=message)
+	send_sms(log_only=True, response_to=response_to, gsm=gsm, message=message)
 	app.logger.info("Sent SMS to gsm:%s with payment options (new)", gsm)
 	set_incoming_action(smsid=response_to, action='notify_payment_options_new')
-	return 'notify_payment_options_new'
+	return fix_encoding(message)
 
 def notify_payment_options_renewal(response_to=None, gsm=None):
 	assert gsm
 
 	message = u"Ditt medlemskap er utløpt. Det kan fornyes via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
-	send_sms(response_to=response_to, gsm=gsm, message=message)
+	send_sms(log_only=True, response_to=response_to, gsm=gsm, message=message)
 	app.logger.info("Sent SMS to gsm:%s with payment options (renewal)", gsm)
 	set_incoming_action(smsid=response_to, action='notify_payment_options_renewal')
-	return 'notify_payment_options_renewal'
+	return fix_encoding(message)
 
 def notify_could_not_charge(response_to=None, gsm=None):
 	assert gsm
 
 	app.logger.warning("Attempt to charge gsm:%s as a response to smsid:%s failed", gsm, response_to)
 	message = u"Beklager, bestillingen kunne ikke gjennomføres. Spørsmål? medlem@studentersamfundet.no"
-	send_sms(response_to=response_to, gsm=gsm, message=message)
+	send_sms(log_only=True, response_to=response_to, gsm=gsm, message=message)
 	set_incoming_action(smsid=response_to, action='notify_could_not_charge')
-	return 'notify_could_not_charge'
+	return fix_encoding(message)
 
 def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 	assert gsm and user
@@ -300,7 +314,7 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 
 	app.logger.info("Membership of user_id:%s gsm:%s was renewed to %s", user['id'], gsm, new_expire)
 	set_incoming_action(smsid=response_to, action='renew_membership')
-	return 'renew_membership'
+	return fix_encoding(u"Vi vil nå forsøke å fornye medlemskapet ditt...")
 
 def new_membership(response_to=None, gsm=None, operator=None):
 	assert gsm
@@ -327,7 +341,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 
 	app.logger.info("New membership for gsm:%s, activation code sent", gsm)
 	set_incoming_action(smsid=response_to, action='new_membership')
-	return 'new_membership'
+	return fix_encoding(u"Vi vil nå forsøke å belaste deg for et medlemskap...")
 
 @app.route('/')
 def main():
