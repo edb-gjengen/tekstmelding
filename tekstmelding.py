@@ -1,8 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from flask import Flask, request, g, abort, jsonify
 from utils import CustomJSONEncoder, generate_activation_code
 import MySQLdb
 import MySQLdb.cursors
 import datetime
+import requests
+import sys
 
 import config
 
@@ -42,8 +47,9 @@ def query_db(query, args=(), one=False, lastrowid=False):
 	"""
 	assert not (one and lastrowid)
 
-	cur = get_db().cursor()
 	app.logger.debug("Query: %s\nArgs: %s", query, args)
+
+	cur = get_db().cursor()
 	cur.execute(query, args)
 
 	if lastrowid:
@@ -51,6 +57,8 @@ def query_db(query, args=(), one=False, lastrowid=False):
 	else:
 	    rv = cur.fetchall()
 	    ret = (rv[0] if rv else None) if one else rv
+
+	get_db().commit()
 	cur.close()
 	return ret
 
@@ -88,6 +96,207 @@ def log_sent(**kwargs):
 			 %(operator)s, %(codeword)s, %(billing_price)s, %(use_dlr)s, %(simulation)s, %(activation_code)s)
 	""", kwargs)
 
+def is_user_expired(user):
+	# A friendly reminder about how the 'expires' column works:
+	# 	NULL means the membership should never expire
+	#	0000-00-00 is the default and means the user has never had a membership
+	#	YYYY-MM-DD is the day the membership will or has expired
+	#
+	# datetime.date does not accept the date 0000-00-00, instead we end
+	# up with None. As a workaround we do the NULL comparison with SQL
+	# and store the result in 'expires_lifelong'.
+	expires = user.get('expires', None)
+	expires_lifelong = user.get('expires_lifelong', None)
+
+	# Lifelong membership?
+	if expires_lifelong:
+		return False
+
+	# Non-expired membership?
+	elif type(expires) is datetime.date and expires >= datetime.date.today():
+		return False
+
+	# Expired?
+	elif not expires or (type(expires) is datetime.date and expires < datetime.date.today()):
+		return True
+
+	else:
+		assert False, "What a trainwreck, we shouldn't be here"
+
+def get_full_name(user):
+	full_name = "%s %s" % (
+		user.get('firstname', '').strip(),
+		user.get('lastname', '').strip()
+	)
+	return full_name[:50].strip()
+
+def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_price=None, operator=None, activation_code=None):
+	assert gsm
+	assert message
+
+	if billing:
+		assert billing_price
+		if not operator:
+			operator = 'ukjent'
+
+	# The strings in this file are in utf-8, encode to latin-1 before sending
+	try:
+		message = message.decode('utf-8').encode('latin-1', 'ignore')
+	except:
+		# Oh, never mind, let's try to send it anyway.
+		pass
+
+	# Truncate message if too long
+	if len(message) > 160:
+		app.logger.warning("Truncated the following message to 160 chars: %s", message)
+		message = message[:160]
+
+	params = {
+		'bruker': app.config['EB_USER'],
+		'passord': app.config['EB_PASSWORD'],
+		'avsender': app.config['EB_SENDER_BULK'],
+		'land': 47,
+		'til': gsm,
+		'melding': message,
+	}
+
+	if billing:
+		params.update({
+			'avsender': app.config['EB_SENDER_BILLING'],
+			#'dlrurl': app.config['EB_DLR'],
+			'ore': billing_price,
+			'operator': operator,
+			'kodeord': 'DNSMEDLEM',
+		})
+
+	if app.config['EB_SIMULATE']:
+		params['simulate'] = 1
+
+	app.logger.debug("send_sms params: %s" % params.items())
+
+	endpoint = app.config['EB_PAYURL'] if billing else app.config['EB_URL']
+
+	try:
+		result = requests.get(endpoint, params=params)
+	except:
+		app.logger.error("Caught exception while attempting to contact Eurobate: %s", sys.exc_info())
+		return False
+
+	if result.status_code != requests.codes.ok: # 200
+		app.logger.error("Got status code %s from Eurobate", result.status_code)
+		return False
+
+	app.logger.debug("Hit URL: %s\nGot result.text: %s", result.url, result.text)
+
+	response = result.text.split(' ')
+	if response[:3] == ['Meldingen', 'er', 'sendt']:
+		if billing:
+			msgid = response[3:4]
+	else:
+		app.logger.error("Message (response_to:%s) was not sent. Eurobate told us: %s", response_to, result.text)
+		return False
+
+	log_sent(
+		response_to = response_to if response_to else 'NULL',
+		msgid = msgid if billing else 0,
+		sender = params['avsender'],
+		receiver = gsm,
+		countrycode = params['land'],
+		message = message,
+		operator = params['operator'] if billing else 'NULL',
+		codeword = params['kodeord'] if billing else 'NULL',
+		billing_price = params['ore'] if billing else 0,
+		use_dlr = 1 if billing else 0,
+		simulation = 1 if app.config['EB_SIMULATE'] else 0,
+		activation_code = activation_code if activation_code else 'NULL')
+
+	return True if not billing else msgid
+
+def notify_valid_membership(response_to=None, gsm=None, user=None):
+	assert gsm and user
+
+	message = u"Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app_link)s" % ({
+		'name': get_full_name(user),
+		'expires': 'verdens undergang' if user.get('expires_lifelong') else str(user.get('expires')),
+		'app_link': 'http://snappo.com/app',
+	})
+
+	send_sms(response_to=response_to, gsm=gsm, message=message)
+
+	app.logger.info("Sent SMS to gsm:%s with proof of membership and link to app", gsm)
+	set_incoming_action(smsid=response_to, action='notify_valid_membership')
+
+def notify_payment_options_new(response_to=None, gsm=None):
+	assert gsm
+
+	message = u"Du kan kjøpe medlemskap via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
+
+	send_sms(response_to=response_to, gsm=gsm, message=message)
+
+	app.logger.info("Sent SMS to gsm:%s with payment options (new)", gsm)
+	set_incoming_action(smsid=response_to, action='notify_payment_options_new')
+
+def notify_payment_options_renewal(response_to=None, gsm=None):
+	assert gsm
+
+	message = u"Ditt medlemskap er utløpt. Det kan fornyes via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
+
+	send_sms(response_to=response_to, gsm=gsm, message=message)
+
+	app.logger.info("Sent SMS to gsm:%s with payment options (renewal)", gsm)
+	set_incoming_action(smsid=response_to, action='notify_payment_options_renewal')
+
+def renew_membership(response_to=None, gsm=None, user=None, operator=None):
+	assert gsm and user
+
+	new_expire = datetime.date.today() + datetime.timedelta(days=365)
+
+	query_db(
+		"UPDATE din_user SET expires = %(expires)s WHERE id = %(id)s", {
+			'expires': str(new_expire),
+			'id': user['id']
+	})
+
+	message = u"Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? medlem@studentersamfundet.no" % ({
+		'name': get_full_name(user),
+		'new_expire': str(new_expire).encode('utf-8'),
+	})
+
+	send_sms(
+		response_to = response_to,
+		gsm = gsm,
+		message = message,
+		operator = operator,
+		billing = True,
+		billing_price = 230 * 100,
+	)
+
+	app.logger.info("Membership of user_id:%s gsm:%s was renewed to %s", user['id'], gsm, new_expire)
+	set_incoming_action(smsid=response_to, action='renew_membership')
+
+def new_membership(response_to=None, gsm=None, operator=None):
+	assert gsm
+
+	activation_code = generate_activation_code()
+
+	message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms?n=%(gsm)s&c=%(activation_code)s" % ({
+		'gsm': gsm,
+		'activation_code': activation_code,
+	})
+
+	send_sms(
+		response_to = response_to,
+		gsm = gsm,
+		message = message,
+		operator = operator,
+		activation_code = activation_code,
+		billing = True,
+		billing_price = 230 * 100,
+	)
+
+	app.logger.info("New membership for gsm:%s, activation code sent", gsm)
+	set_incoming_action(smsid=response_to, action='new_membership')
+
 @app.route('/')
 def main():
 	return 'Tekstmelding er bezt!'
@@ -95,13 +304,13 @@ def main():
 @app.route('/callback')
 def callback():
 	gsm      = request.args.get('gsm', None)
-	operator = request.args.get('operator', None)
+	operator = request.args.get('operator', 'ukjent')
 	codeword = request.args.get('kodeord', None)
 	message  = request.args.get('tekst', '')
 	shortno  = request.args.get('kortnr', None)
 	ip       = request.remote_addr
 
-	if None in (gsm, operator, codeword, shortno):
+	if None in (gsm, codeword, shortno):
 		abort(400) # Bad Request
 
 	if not gsm.isdigit():
@@ -113,7 +322,7 @@ def callback():
 
 	user = get_user_by_phone("+47%s" % gsm)
 
-	id_incoming_sms = log_incoming(
+	smsid = log_incoming(
 		userid     = int(user['id']) if user else None,
 		gsm        = gsm,
 		codeword   = codeword,
@@ -124,68 +333,36 @@ def callback():
 		ip         = ip,
 		simulation = 0)
 
-	app.logger.info("Incoming SMS from gsm:%s saved with smsid:%s", gsm, id_incoming_sms)
-
-	if codeword.strip().upper() == 'DNS':
-		app.logger.info("Sent SMS to gsm:%s with payment options", gsm)
-		set_incoming_action(smsid=id_incoming_sms, action='notify_payment_options')
-		return 'notify_payment_options'
-
-	# Past this point, codeword is DNSMEDLEM
+	app.logger.info("Incoming SMS from gsm:%s saved with smsid:%s", gsm, smsid)
 
 	if user:
-		# A friendly reminder about how the 'expires' column works:
-		# 	NULL means the membership should never expire
-		#	0000-00-00 is the default and means the user has never had a membership
-		#	YYYY-MM-DD is the day the membership will or has expired
-		#
-		# datetime.date does not accept the date 0000-00-00, instead we end
-		# up with None. As a workaround we do the NULL comparison with SQL
-		# and store the result in 'expires_lifelong'.
-		expires = user.get('expires', None)
-		expires_lifelong = user.get('expires_lifelong', None)
+		expired = is_user_expired(user)
 
-		# Does this user have a lifelong membership?
-		if expires_lifelong:
-			app.logger.info("Membership of user_id:%s gsm:%s never expires", user['id'], gsm)
-			set_incoming_action(smsid=id_incoming_sms, action='notify_already_a_member')
+		if codeword.strip().upper() == 'DNS':
+			if not expired:
+				notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
+				return 'notify_valid_membership'
 
-		# No need to renew non-expired memberships.
-		elif type(expires) is datetime.date and expires >= datetime.date.today():
-			app.logger.info("Membership of user_id:%s gsm:%s has not expired yet", user['id'], gsm)
-			set_incoming_action(smsid=id_incoming_sms, action='notify_already_a_member')
+			if expired:
+				notify_payment_options_renewal(response_to=smsid, gsm=gsm)
+				return 'notify_payment_options_renewal'
 
-		# Should we renew?
-		elif not expires or (type(expires) is datetime.date and expires < datetime.date.today()):
-			new_expire = datetime.date.today() + datetime.timedelta(days=365)
-			app.logger.info("Membership of user_id:%s gsm:%s was renewed to %s", user['id'], gsm, new_expire)
-			set_incoming_action(smsid=id_incoming_sms, action='renew_membership')
+		if codeword.strip().upper() == 'DNSMEDLEM':
+			if not expired:
+				notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
+				return 'notify_valid_membership'
 
-		else:
-			assert False, "What a trainwreck, we shouldn't be here"
-
-		return jsonify(user.items())
+			if expired:
+				renew_membership(response_to=smsid, gsm=gsm, user=user, operator=operator)
+				return 'renew_membership'
 	else:
-		app.logger.info("New membership for gsm:%s, activation code sent", gsm)
-		set_incoming_action(smsid=id_incoming_sms, action='new_membership_send_code')
-		result = {'result': 'No existing member.', 'action': 'new_membership_send_code'}
-		activation_code = generate_activation_code()
+		if codeword.strip().upper() == 'DNS':
+			notify_payment_options_new(response_to=smsid, gsm=gsm)
+			return 'notify_payment_options_new'
 
-		log_sent(
-			response_to = id_incoming_sms,
-			msgid = 1337,
-			sender = 'dns',
-			receiver = gsm,
-			countrycode = operator[:1],
-			message = "Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms?n=%s&c=%s" % (gsm, activation_code),
-			operator = operator,
-			codeword = codeword,
-			billing_price = 230 * 100,
-			use_dlr = 0,
-			simulation = 0,
-			activation_code = activation_code)
-
-		return jsonify(result)
+		if codeword.strip().upper() == 'DNSMEDLEM':
+			new_membership(response_to=smsid, gsm=gsm, operator=operator)
+			return 'new_membership'
 
 @app.route('/dlr')
 def dlr():
