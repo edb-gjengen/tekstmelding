@@ -142,16 +142,17 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 	# The strings in this file are in utf-8, encode to latin-1 before sending
 	try:
 		assert type(message) == unicode
-		message = message.encode('latin-1', 'ignore')
+		message_latin = message.encode('latin-1', 'ignore')
 	except:
+		message_latin = message
 		app.logger.warning("Unicode woes: %s", sys.exc_info())
 		# Oh, never mind, let's try to send it anyway.
 		pass
 
 	# Truncate message if too long
-	if len(message) > 160:
-		app.logger.warning("Truncated the following message to 160 chars: %s", message)
-		message = message[:160]
+	if len(message_latin) > 160:
+		app.logger.warning("Truncated the following message to 160 chars: %s", message_latin)
+		message_latin = message_latin[:160]
 
 	params = {
 		'bruker': app.config['EB_USER'],
@@ -159,7 +160,7 @@ def send_sms(gsm=None, message=None, response_to=None, billing=False, billing_pr
 		'avsender': app.config['EB_SENDER_BULK'],
 		'land': 47,
 		'til': gsm,
-		'melding': message,
+		'melding': message_latin,
 	}
 
 	if billing:
@@ -268,6 +269,16 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 		"UPDATE din_user SET expires = %(expires)s WHERE id = %(id)s", {
 			'expires': str(new_expire),
 			'id': user['id']
+	})
+
+	query_db("""
+		INSERT INTO din_userupdate (date, user_id_updated, comment, user_id_updated_by)
+		VALUES (%(date)s, %(user_id_updated)s, %(comment)s, %(user_id_updated_by)s)
+	""", {
+		'date': str(datetime.datetime.now()),
+		'user_id_updated': user['id'],
+		'comment': "Medlemskap fornyet med SMS.",
+		'user_id_updated_by': user['id'],
 	})
 
 	message = u"Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? medlem@studentersamfundet.no" % ({
