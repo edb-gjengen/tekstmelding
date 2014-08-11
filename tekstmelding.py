@@ -222,29 +222,36 @@ def notify_valid_membership(response_to=None, gsm=None, user=None):
 	})
 
 	send_sms(response_to=response_to, gsm=gsm, message=message)
-
 	app.logger.info("Sent SMS to gsm:%s with proof of membership and link to app", gsm)
 	set_incoming_action(smsid=response_to, action='notify_valid_membership')
+	return 'notify_valid_membership'
 
 def notify_payment_options_new(response_to=None, gsm=None):
 	assert gsm
 
 	message = u"Du kan kjøpe medlemskap via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
-
 	send_sms(response_to=response_to, gsm=gsm, message=message)
-
 	app.logger.info("Sent SMS to gsm:%s with payment options (new)", gsm)
 	set_incoming_action(smsid=response_to, action='notify_payment_options_new')
+	return 'notify_payment_options_new'
 
 def notify_payment_options_renewal(response_to=None, gsm=None):
 	assert gsm
 
 	message = u"Ditt medlemskap er utløpt. Det kan fornyes via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2090 (230,-)"
-
 	send_sms(response_to=response_to, gsm=gsm, message=message)
-
 	app.logger.info("Sent SMS to gsm:%s with payment options (renewal)", gsm)
 	set_incoming_action(smsid=response_to, action='notify_payment_options_renewal')
+	return 'notify_payment_options_renewal'
+
+def notify_could_not_charge(response_to=None, gsm=None):
+	assert gsm
+
+	app.logger.warning("Attempt to charge gsm:%s as a response to smsid:%s failed", gsm, response_to)
+	message = u"Beklager, bestillingen kunne ikke gjennomføres. Spørsmål? medlem@studentersamfundet.no"
+	send_sms(response_to=response_to, gsm=gsm, message=message)
+	set_incoming_action(smsid=response_to, action='notify_could_not_charge')
+	return 'notify_could_not_charge'
 
 def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 	assert gsm and user
@@ -262,7 +269,7 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 		'new_expire': str(new_expire).encode('utf-8'),
 	})
 
-	send_sms(
+	msgid = send_sms(
 		response_to = response_to,
 		gsm = gsm,
 		message = message,
@@ -271,8 +278,12 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
 		billing_price = 230 * 100,
 	)
 
+	if not msgid:
+		return notify_could_not_charge(response_to=response_to, gsm=gsm)
+
 	app.logger.info("Membership of user_id:%s gsm:%s was renewed to %s", user['id'], gsm, new_expire)
 	set_incoming_action(smsid=response_to, action='renew_membership')
+	return 'renew_membership'
 
 def new_membership(response_to=None, gsm=None, operator=None):
 	assert gsm
@@ -284,7 +295,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 		'activation_code': activation_code,
 	})
 
-	send_sms(
+	msgid = send_sms(
 		response_to = response_to,
 		gsm = gsm,
 		message = message,
@@ -294,8 +305,12 @@ def new_membership(response_to=None, gsm=None, operator=None):
 		billing_price = 230 * 100,
 	)
 
+	if not msgid:
+		return notify_could_not_charge(response_to=response_to, gsm=gsm)
+
 	app.logger.info("New membership for gsm:%s, activation code sent", gsm)
 	set_incoming_action(smsid=response_to, action='new_membership')
+	return 'new_membership'
 
 @app.route('/')
 def main():
@@ -340,29 +355,23 @@ def callback():
 
 		if codeword.strip().upper() == 'DNS':
 			if not expired:
-				notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
-				return 'notify_valid_membership'
+				return notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
 
 			if expired:
-				notify_payment_options_renewal(response_to=smsid, gsm=gsm)
-				return 'notify_payment_options_renewal'
+				return notify_payment_options_renewal(response_to=smsid, gsm=gsm)
 
 		if codeword.strip().upper() == 'DNSMEDLEM':
 			if not expired:
-				notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
-				return 'notify_valid_membership'
+				return notify_valid_membership(response_to=smsid, gsm=gsm, user=user)
 
 			if expired:
-				renew_membership(response_to=smsid, gsm=gsm, user=user, operator=operator)
-				return 'renew_membership'
+				return renew_membership(response_to=smsid, gsm=gsm, user=user, operator=operator)
 	else:
 		if codeword.strip().upper() == 'DNS':
-			notify_payment_options_new(response_to=smsid, gsm=gsm)
-			return 'notify_payment_options_new'
+			return notify_payment_options_new(response_to=smsid, gsm=gsm)
 
 		if codeword.strip().upper() == 'DNSMEDLEM':
-			new_membership(response_to=smsid, gsm=gsm, operator=operator)
-			return 'new_membership'
+			return new_membership(response_to=smsid, gsm=gsm, operator=operator)
 
 @app.route('/dlr')
 def dlr():
