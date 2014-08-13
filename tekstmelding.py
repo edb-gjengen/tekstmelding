@@ -15,14 +15,14 @@ app = Flask(__name__)
 app.config.from_object('config')
 app.json_encoder = CustomJSONEncoder
 
-if not app.debug:
-    import logging
-    from logging.handlers import StreamHandler
-    handler = StreamHandler(stream=sys.stderr)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    handler.setLevel(logging.INFO)
-    app.logger.addHandler(handler)
+# if not app.debug:
+#     import logging
+#     from logging.handlers import StreamHandler
+#     handler = StreamHandler(stream=sys.stderr)
+#     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+#     handler.setFormatter(formatter)
+#     handler.setLevel(logging.INFO)
+#     app.logger.addHandler(handler)
 
 def connect_db():
 	"""Connects to our database."""
