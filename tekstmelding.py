@@ -15,6 +15,15 @@ app = Flask(__name__)
 app.config.from_object('config')
 app.json_encoder = CustomJSONEncoder
 
+if not app.debug:
+    import logging
+    from logging.handlers import StreamHandler
+    handler = StreamHandler(stream=sys.stderr)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.INFO)
+    app.logger.addHandler(handler)
+
 def connect_db():
 	"""Connects to our database."""
 	db = MySQLdb.connect(
@@ -133,14 +142,15 @@ def get_full_name(user):
 def fix_encoding(message):
 	try:
 		assert type(message) == unicode
-		message_latin = message.encode('latin-1', 'ignore')
+		new_message = message.encode('latin-1', 'ignore')
 	except:
-		message_latin = message
-		app.logger.warning("Unicode woes: %s", sys.exc_info())
+		new_message = message
+		app.logger.warning("Unicode woes: message_type=%s message=%s exc_info=%s",
+			type(message), message, sys.exc_info())
 		# Oh, never mind, let's try to send it anyway.
 		pass
 
-	return message
+	return new_message
 
 def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=False, billing_price=None, operator=None, activation_code=None):
 	assert gsm
@@ -152,14 +162,7 @@ def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=F
 			operator = 'ukjent'
 
 	# The strings in this file are in utf-8, encode to latin-1 before sending
-	try:
-		assert type(message) == unicode
-		message_latin = message.encode('latin-1', 'ignore')
-	except:
-		message_latin = message
-		app.logger.warning("Unicode woes: %s", sys.exc_info())
-		# Oh, never mind, let's try to send it anyway.
-		pass
+	message_latin = fix_encoding(message)
 
 	# Truncate message if too long
 	if len(message_latin) > 160:
@@ -208,8 +211,8 @@ def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=F
 		
 		response = result.text.split(' ')
 		if response[:3] == ['Meldingen', 'er', 'sendt']:
-			if billing and response[3:4] and response[3:4][0].isdigit():
-				msgid = int(response[3:4][0])
+			if billing and len(response) == 4 and response[3].isdigit():
+				msgid = int(response[3])
 			if billing and msgid == 0:
 				app.logger.warning("Did not get a msgid from Eurobate when billing as response to smsid:%s", response_to)
 		else:
