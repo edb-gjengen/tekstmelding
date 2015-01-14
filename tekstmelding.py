@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from flask import Flask, request, g, abort, jsonify
-from utils import CustomJSONEncoder, generate_activation_code
+from flask import Flask, request, g, abort
+from utils import generate_activation_code
 import MySQLdb
 import MySQLdb.cursors
 import datetime
@@ -13,7 +13,6 @@ import config
 
 app = Flask(__name__)
 app.config.from_object('config')
-app.json_encoder = CustomJSONEncoder
 
 if not app.debug:
     import logging
