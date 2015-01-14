@@ -23,16 +23,18 @@ if not app.debug:
     handler.setLevel(logging.INFO)
     app.logger.addHandler(handler)
 
+
 def connect_db():
     """Connects to our database."""
     db = MySQLdb.connect(
-        host    = app.config['DATABASE_HOST'],
-        user    = app.config['DATABASE_USER'],
-        passwd  = app.config['DATABASE_PASS'],
-        db      = app.config['DATABASE_NAME'],
-        cursorclass = MySQLdb.cursors.DictCursor,
+        host=app.config['DATABASE_HOST'],
+        user=app.config['DATABASE_USER'],
+        passwd=app.config['DATABASE_PASS'],
+        db=app.config['DATABASE_NAME'],
+        cursorclass=MySQLdb.cursors.DictCursor,
         charset='utf8')
     return db
+
 
 def get_db():
     """Opens a new database connection if there is none yet for the
@@ -41,11 +43,13 @@ def get_db():
         g.db = connect_db()
     return g.db
 
+
 @app.teardown_appcontext
 def close_db(error):
     """Closes the database connection at the end of the request."""
     if hasattr(g, 'db'):
         g.db.close()
+
 
 def query_db(query, args=(), one=False, lastrowid=False):
     """Queries the database.
@@ -70,6 +74,7 @@ def query_db(query, args=(), one=False, lastrowid=False):
     cur.close()
     return ret
 
+
 def get_user_by_phone(number):
     user = query_db("""
         SELECT user.*,
@@ -80,6 +85,7 @@ def get_user_by_phone(number):
     """, [number], one=True)
     return user
 
+
 def log_incoming(**kwargs):
     return query_db("""
         INSERT INTO din_sms_received
@@ -88,12 +94,14 @@ def log_incoming(**kwargs):
             (%(userid)s, %(gsm)s, %(codeword)s, %(message)s, %(operator)s, %(shortno)s, %(action)s, %(ip)s, %(simulation)s)
     """, kwargs, lastrowid=True)
 
+
 def set_incoming_action(**kwargs):
     query_db("""
         UPDATE din_sms_received
         SET action = %(action)s
         WHERE smsid = %(smsid)s
     """, kwargs)
+
 
 def log_sent(**kwargs):
     query_db("""
@@ -103,6 +111,7 @@ def log_sent(**kwargs):
             (%(response_to)s, %(msgid)s, %(sender)s, %(receiver)s, %(countrycode)s, %(message)s,
              %(operator)s, %(codeword)s, %(billing_price)s, %(use_dlr)s, %(simulation)s, %(activation_code)s)
     """, kwargs)
+
 
 def is_user_expired(user):
     # A friendly reminder about how the 'expires' column works:
@@ -131,6 +140,7 @@ def is_user_expired(user):
     else:
         assert False, "What a trainwreck, we shouldn't be here"
 
+
 def get_full_name(user):
     full_name = "%s %s" % (
         user.get('firstname', '').strip(),
@@ -138,18 +148,21 @@ def get_full_name(user):
     )
     return full_name[:50].strip()
 
+
 def fix_encoding(message):
     try:
         assert type(message) == unicode
         new_message = message.encode('latin-1', 'ignore')
     except:
         new_message = message
-        app.logger.warning("Unicode woes: message_type=%s message=%s exc_info=%s",
+        app.logger.warning(
+            "Unicode woes: message_type=%s message=%s exc_info=%s",
             type(message), message, sys.exc_info())
         # Oh, never mind, let's try to send it anyway.
         pass
 
     return new_message
+
 
 def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=False, billing_price=None, operator=None, activation_code=None):
     assert gsm
@@ -165,7 +178,8 @@ def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=F
 
     # Truncate message if too long
     if len(message_latin) > 160:
-        app.logger.warning("Truncated the following message to 160 chars: %s", message_latin)
+        app.logger.warning(
+            "Truncated the following message to 160 chars: %s", message_latin)
         message_latin = message_latin[:160]
 
     params = {
@@ -199,15 +213,19 @@ def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=F
         try:
             result = requests.get(endpoint, params=params)
         except:
-            app.logger.error("Caught exception while attempting to contact Eurobate: %s", sys.exc_info())
+            app.logger.error(
+                "Caught exception while attempting to contact Eurobate: %s",
+                sys.exc_info())
             return False
 
-        if result.status_code != requests.codes.ok: # 200
-            app.logger.error("Got status code %s from Eurobate", result.status_code)
+        if result.status_code != requests.codes.ok:  # 200
+            app.logger.error(
+                "Got status code %s from Eurobate", result.status_code)
             return False
 
-        app.logger.debug("Hit URL: %s\nGot result.text: %s", result.url, result.text)
-        
+        app.logger.debug(
+            "Hit URL: %s\nGot result: %s", result.url, result.text)
+
         response = result.text.split(' ')
         if response[:3] == ['Meldingen', 'er', 'sendt']:
             if billing and len(response) == 4 and response[3].isdigit():
@@ -219,21 +237,22 @@ def send_sms(log_only=False, gsm=None, message=None, response_to=None, billing=F
             return False
 
     log_sent(
-        response_to = response_to if response_to else 0,
-        msgid = msgid if billing else 0,
-        sender = params['avsender'],
-        receiver = gsm,
-        countrycode = params['land'],
-        message = message,
-        operator = params['operator'] if billing else 'NULL',
-        codeword = params['kodeord'] if billing else 'NULL',
-        billing_price = params['ore'] if billing else 0,
-        #use_dlr = 1 if billing else 0,
-        use_dlr = 0,
-        simulation = 1 if app.config['EB_SIMULATE'] else 0,
-        activation_code = activation_code if activation_code else 'NULL')
+        response_to=response_to if response_to else 0,
+        msgid=msgid if billing else 0,
+        sender=params['avsender'],
+        receiver=gsm,
+        countrycode=params['land'],
+        message=message,
+        operator=params['operator'] if billing else 'NULL',
+        codeword=params['kodeord'] if billing else 'NULL',
+        billing_price=params['ore'] if billing else 0,
+        #use_dlr=1 if billing else 0,
+        use_dlr=0,
+        simulation=1 if app.config['EB_SIMULATE'] else 0,
+        activation_code=activation_code if activation_code else 'NULL')
 
     return True if not billing else msgid
+
 
 def notify_valid_membership(response_to=None, gsm=None, user=None):
     assert gsm and user
@@ -249,6 +268,7 @@ def notify_valid_membership(response_to=None, gsm=None, user=None):
     set_incoming_action(smsid=response_to, action='notify_valid_membership')
     return fix_encoding(message)
 
+
 def notify_payment_options_new(response_to=None, gsm=None):
     assert gsm
 
@@ -257,6 +277,7 @@ def notify_payment_options_new(response_to=None, gsm=None):
     app.logger.info("Sent SMS to gsm:%s with payment options (new)", gsm)
     set_incoming_action(smsid=response_to, action='notify_payment_options_new')
     return fix_encoding(message)
+
 
 def notify_payment_options_renewal(response_to=None, gsm=None):
     assert gsm
@@ -267,6 +288,7 @@ def notify_payment_options_renewal(response_to=None, gsm=None):
     set_incoming_action(smsid=response_to, action='notify_payment_options_renewal')
     return fix_encoding(message)
 
+
 def notify_could_not_charge(response_to=None, gsm=None):
     assert gsm
 
@@ -276,16 +298,18 @@ def notify_could_not_charge(response_to=None, gsm=None):
     set_incoming_action(smsid=response_to, action='notify_could_not_charge')
     return fix_encoding(message)
 
+
 def renew_membership(response_to=None, gsm=None, user=None, operator=None):
     assert gsm and user
 
     new_expire = datetime.date.today() + datetime.timedelta(days=365)
 
     query_db(
-        "UPDATE din_user SET expires = %(expires)s WHERE id = %(id)s", {
+        "UPDATE din_user SET expires = %(expires)s WHERE id = %(id)s",
+        {
             'expires': str(new_expire),
             'id': user['id']
-    })
+        })
 
     query_db("""
         INSERT INTO din_userupdate (date, user_id_updated, comment, user_id_updated_by)
@@ -303,12 +327,12 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
     })
 
     msgid = send_sms(
-        response_to = response_to,
-        gsm = gsm,
-        message = message,
-        operator = operator,
-        billing = True,
-        billing_price = app.config['MEMBERSHIP_PRICE_KR'] * 100,
+        response_to=response_to,
+        gsm=gsm,
+        message=message,
+        operator=operator,
+        billing=True,
+        billing_price=app.config['MEMBERSHIP_PRICE_KR'] * 100,
     )
 
     if not msgid:
@@ -317,6 +341,7 @@ def renew_membership(response_to=None, gsm=None, user=None, operator=None):
     app.logger.info("Membership of user_id:%s gsm:%s was renewed to %s", user['id'], gsm, new_expire)
     set_incoming_action(smsid=response_to, action='renew_membership')
     return fix_encoding(u"Vi vil nå forsøke å fornye medlemskapet ditt...")
+
 
 def new_membership(response_to=None, gsm=None, operator=None):
     assert gsm
@@ -329,13 +354,13 @@ def new_membership(response_to=None, gsm=None, operator=None):
     })
 
     msgid = send_sms(
-        response_to = response_to,
-        gsm = gsm,
-        message = message,
-        operator = operator,
-        activation_code = activation_code,
-        billing = True,
-        billing_price = app.config['MEMBERSHIP_PRICE_KR'] * 100,
+        response_to=response_to,
+        gsm=gsm,
+        message=message,
+        operator=operator,
+        activation_code=activation_code,
+        billing=True,
+        billing_price=app.config['MEMBERSHIP_PRICE_KR'] * 100,
     )
 
     if not msgid:
@@ -345,41 +370,43 @@ def new_membership(response_to=None, gsm=None, operator=None):
     set_incoming_action(smsid=response_to, action='new_membership')
     return fix_encoding(u"Vi vil nå forsøke å belaste deg for et medlemskap...")
 
+
 @app.route('/')
 def main():
     return 'Tekstmelding!'
 
+
 @app.route('/callback')
 def callback():
-    gsm      = request.args.get('gsm', None)
+    gsm = request.args.get('gsm', None)
     operator = request.args.get('operator', 'ukjent')
     codeword = request.args.get('kodeord', None)
-    message  = request.args.get('tekst', '')
-    shortno  = request.args.get('kortnr', None)
-    ip       = request.remote_addr
+    message = request.args.get('tekst', '')
+    shortno = request.args.get('kortnr', None)
+    ip = request.remote_addr
 
     if None in (gsm, codeword, shortno):
-        abort(400) # Bad Request
+        abort(400)  # Bad Request
 
     if not gsm.isdigit():
         # What the fuck, man, that's not a phone number, man.
-        abort(400) # Bad Request
+        abort(400)  # Bad Request
 
     if not codeword.strip().upper() in ('DNS', 'DNSMEDLEM'):
-        abort(400) # Bad Request
+        abort(400)  # Bad Request
 
     user = get_user_by_phone("+47%s" % gsm)
 
     smsid = log_incoming(
-        userid     = int(user['id']) if user else None,
-        gsm        = gsm,
-        codeword   = codeword,
-        message    = message,
-        operator   = operator,
-        shortno    = shortno,
-        action     = 'no_action',
-        ip         = ip,
-        simulation = 0)
+        userid=int(user['id']) if user else None,
+        gsm=gsm,
+        codeword=codeword,
+        message=message,
+        operator=operator,
+        shortno=shortno,
+        action='no_action',
+        ip=ip,
+        simulation=0)
 
     app.logger.info("Incoming SMS from gsm:%s saved with smsid:%s", gsm, smsid)
 
@@ -401,6 +428,7 @@ def callback():
             return notify_payment_options_new(response_to=smsid, gsm=gsm)
         elif codeword.strip().upper() == 'DNSMEDLEM':
             return new_membership(response_to=smsid, gsm=gsm, operator=operator)
+
 
 @app.route('/dlr')
 def dlr():
