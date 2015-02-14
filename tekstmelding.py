@@ -347,7 +347,7 @@ def new_membership(response_to=None, gsm=None, operator=None):
 
     activation_code = generate_activation_code()
 
-    message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: http://s.neuf.no/sms/%(gsm)s/%(activation_code)s" % ({
+    message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms/%(gsm)s/%(activation_code)s" % ({
         'gsm': gsm,
         'activation_code': activation_code,
     })
