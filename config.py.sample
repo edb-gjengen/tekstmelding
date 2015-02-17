@@ -1,36 +1,42 @@
-DEBUG = True
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-DATABASE_HOST = 'localhost'
-DATABASE_USER = 'inside'
-DATABASE_PASS = ''
-DATABASE_NAME = 'inside'
+DEBUG = True
+ADMINS = ('sysadmin@example.com')
+
+DB_HOST = 'localhost'
+DB_USER = ''
+DB_PASS = ''
+DB_NAME = 'tekstmelding'
+
+INSIDE_DB_HOST = 'localhost'
+INSIDE_DB_USER = ''
+INSIDE_DB_PASS = ''
+INSIDE_DB_NAME = 'inside'
 
 MEMBERSHIP_PRICE_KR = 1
 
 
-## Eurobate HTTP PUSH ##
-########################
+## Sendega ##
+#############
 
-# Endpoint for bulk messages
-EB_URL = 'http://dio.eurobate.com/push.php'
+# Endpoint for HTTP POST/GET
+SENDEGA_URL = 'https://smsc.sendega.com/SendSms.ashx'
 
-# Endpoint for billing messages
-EB_PAYURL = 'http://dio.eurobate.com/push2.php'
+# Endpoint for SOAP communication with Sendega
+SENDEGA_WSDL = 'https://smsc.sendega.com/Content.asmx?WSDL'
 
 # Our endpoint for delivery reports
-EB_DLR = 'http://tekstmelding.neuf.no/dlr'
+SENDEGA_DLR = 'http://example.com/dlr'
 
-# Our Eurobate username
-EB_USER = ''
+# Our Sendega username
+SENDEGA_USERNAME = ''
 
-# Our Eurobate password
-EB_PASSWORD = ''
+# Our Sendega password
+SENDEGA_PASSWORD = ''
 
-# This shows up as the sender of bulk text messages
-EB_SENDER_BULK = 'DNS'
+# Default sender of bulk text messages
+SENDEGA_SENDER_BULK = 'DNS'
 
-# This shows up as the sender of billing text messages
-EB_SENDER_BILLING = '2090'
-
-# Simulate message sending?
-EB_SIMULATE = True
+# Default sender of billing text messages, must be the short number
+SENDEGA_SENDER_BILLING = '2454'

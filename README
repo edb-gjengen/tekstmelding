@@ -2,13 +2,16 @@ Dependencies:
 	sudo apt-get install libmysqlclient-dev python-dev
 
 Setup environment:
-	tekstmelding$ virtualenv venv
-	tekstmelding$ . venv/bin/activate
-	(venv)tekstmelding$ pip install -r requirements.txt
+	tekstmelding$ virtualenv env
+	tekstmelding$ . env/bin/activate
+	(env)tekstmelding$ pip install -r requirements.txt
 
 Create a config file:
 	tekstmelding$ cp config.py.sample config.py
 	# Edit config.py with your favorite editor
 
+Create the database:
+	tekstmelding$ mysql -uUSER -p tekstmelding < create_db.sql
+
 Run the server:
-	(venv)tekstmelding$ python tekstmelding.py
+	(env)tekstmelding$ python tekstmelding.py
