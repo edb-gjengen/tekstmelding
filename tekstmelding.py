@@ -339,8 +339,13 @@ def renew_membership_delivered(incoming_id=None, dlr_id=None, user_id=None):
 def new_membership(incoming_id=None, number=None):
     activation_code = generate_activation_code()
 
+<<<<<<< HEAD
     content = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: http://s.neuf.no/sms/%(number)s/%(activation_code)s" % ({
         'number': number,
+=======
+    message = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms/%(gsm)s/%(activation_code)s" % ({
+        'gsm': gsm,
+>>>>>>> master
         'activation_code': activation_code,
     })
 
