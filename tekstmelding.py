@@ -94,12 +94,12 @@ def get_sendega():
     Creates one if there is none for the current application context."""
     if not hasattr(g, 'sendega'):
         g.sendega = sendega.Sendega(
-            wsdl=config.SENDEGA_WSDL,
-            username=config.SENDEGA_USERNAME,
-            password=config.SENDEGA_PASSWORD,
-            sender_bulk=config.SENDEGA_SENDER_BULK,
-            sender_billing=config.SENDEGA_SENDER_BILLING,
-            dlr_url=config.SENDEGA_DLR)
+            wsdl=app.config['SENDEGA_WSDL'],
+            username=app.config['SENDEGA_USERNAME'],
+            password=app.config['SENDEGA_PASSWORD'],
+            sender_bulk=app.config['SENDEGA_SENDER_BULK'],
+            sender_billing=app.config['SENDEGA_SENDER_BILLING'],
+            dlr_url=app.config['SENDEGA_DLR'])
     return g.sendega
 
 
