@@ -485,7 +485,7 @@ def dlr():
     # We need to check what the original message was all about
     incoming_id = args['extID']
 
-    success = (args['statustext'] == 'delivered')
+    success = (args['status'] == '4')
     if not success:
         return notify_could_not_charge(
             incoming_id=incoming_id, dlr_id=dlr_id, number=args['msisdn'])
