@@ -19,6 +19,43 @@ INSIDE_API_KEY = ''
 
 MEMBERSHIP_PRICE_KR = 1
 
+## Logging ##
+#############
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': True,
+    'formatters': {
+        'fmt': {
+            'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        },
+    },
+
+    'handlers': {
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'formatter': 'fmt',
+            'filename': '/tmp/tekstmelding-app.log',
+        },
+        'email': {
+            'class': 'logging.handlers.SMTPHandler',
+            'level': 'ERROR',
+            'mailhost': ('localhost', 25),
+            'fromaddr': 'noreply@example.com',
+            'toaddrs': ADMINS,
+            'subject': 'Tekstmelding FAIL',
+        },
+    },
+
+    'loggers': {
+        '': {
+            'handlers': ['file', 'email'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    }
+}
 
 ## Sendega ##
 #############

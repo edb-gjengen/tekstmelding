@@ -6,6 +6,7 @@ import MySQLdb
 import MySQLdb.cursors
 import datetime
 import logging
+import logging.config
 
 from utils import generate_activation_code
 import sendega
@@ -17,23 +18,7 @@ app = Flask(__name__)
 app.config.from_object('config')
 
 if not app.debug:
-    # Log INFO and higher levels to stderr
-    stream_handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    stream_handler.setFormatter(formatter)
-    stream_handler.setLevel(logging.INFO)
-    app.logger.addHandler(stream_handler)
-
-    # Email admins about ERRORs and higher levels
-    from logging.handlers import SMTPHandler
-    mail_handler = SMTPHandler(
-        mailhost='127.0.0.1',
-        fromaddr='noreply+tekstmelding@neuf.no',
-        toaddrs=app.config['ADMINS'],
-        subject='Tekstmelding FAIL')
-    mail_handler.setLevel(logging.ERROR)
-    app.logger.addHandler(mail_handler)
+    logging.config.dictConfig(app.config['LOGGING'])
 
 
 def connect_db():
