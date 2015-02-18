@@ -412,7 +412,7 @@ def incoming():
     for key in ('msgid', 'msisdn', 'msg', 'mms', 'mmsdata', 'shortcode',
                 'mcc', 'mnc', 'pricegroup', 'keyword', 'keywordid',
                 'errorcode', 'errormessage', 'registered'):
-        args[key] = request.args.get(key)
+        args[key] = request.form.get(key)
 
     app.logger.debug("Incoming, args: %s", args)
 
@@ -476,7 +476,7 @@ def dlr():
     for key in ('msgid', 'extID', 'msisdn', 'status', 'statustext',
                 'registered', 'sent', 'delivered',
                 'errorcode', 'errormessage', 'operatorerrorcode'):
-        args[key] = request.args.get(key)
+        args[key] = request.form.get(key)
 
     app.logger.debug("Dlr, args: %s", args)
 
