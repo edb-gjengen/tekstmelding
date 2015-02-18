@@ -375,9 +375,35 @@ def new_membership_delivered(incoming_id=None, dlr_id=None):
     return 'OK'
 
 
-@app.route('/')
-def main():
-    return 'Tekstmelding!'
+def get_activation_code_purchase_date(number, activation_code):
+    row = query_db("""
+        SELECT event.timestamp FROM incoming, event
+        WHERE incoming.msisdn = %s
+        AND incoming.id = event.incoming_id
+        AND event.action = 'new_membership'
+        AND event.activation_code = %s""", [number, activation_code], one=True)
+    return str(row.get('timestamp')) if row else None
+
+
+@app.route('/inside-code-purchase-date')
+def inside_code_purchase_date():
+    number = request.args.get('number')
+    activation_code = request.args.get('activation_code')
+    api_key = request.args.get('api_key')
+
+    if api_key != app.config['INSIDE_API_KEY']:
+        abort(403)  # Forbidden
+
+    if None in (number, activation_code):
+        return ''
+
+    purchase_date = get_activation_code_purchase_date(number, activation_code)
+
+    app.logger.info(
+        'Checked purchase date for number=%s activation_code=%s purchase_date=%s',
+        number, activation_code, purchase_date)
+
+    return purchase_date or ''
 
 
 @app.route('/sendega-incoming')
@@ -480,6 +506,11 @@ def dlr():
             incoming_id=incoming_id, dlr_id=dlr_id)
 
     app.logger.error('Unhandled DLR, dlr_id=%s', dlr_id)
+
+
+@app.route('/')
+def main():
+    return 'Tekstmelding!'
 
 if __name__ == '__main__':
     app.run()

@@ -14,6 +14,9 @@ INSIDE_DB_USER = ''
 INSIDE_DB_PASS = ''
 INSIDE_DB_NAME = 'inside'
 
+# Authenticates Inside
+INSIDE_API_KEY = ''
+
 MEMBERSHIP_PRICE_KR = 1
 
 
