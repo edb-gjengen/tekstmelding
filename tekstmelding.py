@@ -420,7 +420,7 @@ def inside_code_purchase_date():
     return purchase_date or ''
 
 
-@app.route('/sendega-incoming')
+@app.route('/sendega-incoming', methods=['POST'])
 def incoming():
     args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
 
@@ -484,7 +484,7 @@ def incoming():
     app.logger.error('Unhandled SMS, incoming_id=%s', incoming_id)
 
 
-@app.route('/sendega-dlr')
+@app.route('/sendega-dlr', methods=['POST'])
 def dlr():
     args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
 
