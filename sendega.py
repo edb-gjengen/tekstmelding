@@ -49,7 +49,7 @@ class Sendega(object):
 
         return args
 
-    def send(self, args):
-        result = self.client.service.Send(**args)
+    def send(self, **kwargs):
+        result = self.client.service.Send(kwargs)
 
         return dict(result)
