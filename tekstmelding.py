@@ -214,7 +214,10 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
     assert user
 
     name = get_inside().get_full_name(user)
-    expires = 'verdens undergang' if user.get('expires_lifelong') else str(user.get('expires'))
+    if user.get('expires_lifelong'):
+        expires = 'verdens undergang'
+    else:
+        expires = str(user.get('expires'))
 
     content = u"Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app)s" % ({
         'name': name,
@@ -410,7 +413,8 @@ def inside_code_purchase_date():
     purchase_date = get_activation_code_purchase_date(number, activation_code)
 
     app.logger.info(
-        'Checked purchase date for number:%s activation_code:%s purchase_date:%s',
+        'Inside checked purchase date for '
+        'number:%s activation_code:%s purchase_date:%s',
         number, activation_code, purchase_date)
 
     return purchase_date or ''
@@ -418,7 +422,7 @@ def inside_code_purchase_date():
 
 @app.route('/sendega-incoming')
 def incoming():
-    args = {'ip': request.remote_addr}
+    args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
 
     for key in ('msgid', 'msisdn', 'msg', 'mms', 'mmsdata', 'shortcode',
                 'mcc', 'mnc', 'pricegroup', 'keyword', 'keywordid',
@@ -482,36 +486,36 @@ def incoming():
 
 @app.route('/sendega-dlr')
 def dlr():
-    args = {}
-    real_ip = request.headers.get('X-Real-IP')
-    args['ip'] = real_ip or request.remote_addr
+    args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
 
     for key in ('msgid', 'extID', 'msisdn', 'status', 'statustext',
                 'registered', 'sent', 'delivered',
                 'errorcode', 'errormessage', 'operatorerrorcode'):
         args[key] = request.args.get(key)
 
+    app.logger.debug("Dlr, args: %s", args)
+
     dlr_id = log_dlr(**args)
 
     # We need to check what the original message was all about
     incoming_id = args['extID']
 
+    success = (args['statustext'] == 'delivered')
+    if not success:
+        return notify_could_not_charge(
+            incoming_id=incoming_id, dlr_id=dlr_id, number=args['msisdn'])
+
     event = query_db("""
         SELECT * FROM event
         WHERE incoming_id=%s
         AND action IN ('new_membership', 'renew_membership')
-        """, incoming_id, one=True)
+        """, [incoming_id], one=True)
 
     if not event:
         app.logger.error('Got an unknown delivery report, dlr_id=%s', dlr_id)
         return 'what'
 
-    success = (args['status'] == 4)
     action = event['action']
-
-    if not success:
-        return notify_could_not_charge(
-            incoming_id=incoming_id, dlr_id=dlr_id, number=args['msisdn'])
 
     if action == 'renew_membership':
         return renew_membership_delivered(
