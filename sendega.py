@@ -50,6 +50,6 @@ class Sendega(object):
         return args
 
     def send(self, **kwargs):
-        result = self.client.service.Send(kwargs)
+        result = self.client.service.Send(**kwargs)
 
         return dict(result)
