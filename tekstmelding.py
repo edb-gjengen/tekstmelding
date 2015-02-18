@@ -165,6 +165,12 @@ def log_event(**kwargs):
     """, kwargs, lastrowid=True)
 
 
+def update_event(event_id, outgoing_id):
+    query_db(
+        "UPDATE event SET outgoing_id=%s WHERE id=%s",
+        [outgoing_id, event_id])
+
+
 def log_dlr(**kwargs):
     return query_db("""
         INSERT INTO dlr
@@ -252,7 +258,7 @@ def notify_payment_options_new(incoming_id=None, number=None):
 
 def notify_payment_options_renewal(incoming_id=None, number=None, user=None):
     content = u"Ditt medlemskap er utløpt. Det kan fornyes via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2454 (230,-)"
-    
+
     outgoing_id = send_sms(
         destination=number,
         content=content,
@@ -299,6 +305,12 @@ def renew_membership(incoming_id=None, number=None, user=None):
         'new_expire': str(new_expire),
     })
 
+    # Log the event first, just in case the DLR is instant
+    event_id = log_event(
+        action='renew_membership',
+        incoming_id=incoming_id,
+        user_id=user['id'])
+
     outgoing_id = send_sms(
         destination=number,
         content=content,
@@ -307,15 +319,11 @@ def renew_membership(incoming_id=None, number=None, user=None):
         price=app.config['MEMBERSHIP_PRICE_KR'] * 100,
     )
 
-    app.logger.info(
-        "Membership renewal requested by userid:%s number:%s new_expire:%s",
-        user['id'], number, new_expire)
+    update_event(event_id=event_id, outgoing_id=outgoing_id)
 
-    log_event(
-        action='renew_membership',
-        incoming_id=incoming_id,
-        outgoing_id=outgoing_id,
-        user_id=user['id'])
+    app.logger.info(
+        "Membership renewal requested by user_id:%s number:%s new_expire:%s",
+        user['id'], number, new_expire)
 
     return 'OK'
 
@@ -344,6 +352,12 @@ def new_membership(incoming_id=None, number=None):
         'activation_code': activation_code,
     })
 
+    # Log the event first, just in case the DLR is instant
+    event_id = log_event(
+        action='new_membership',
+        incoming_id=incoming_id,
+        activation_code=activation_code)
+
     outgoing_id = send_sms(
         destination=number,
         content=content,
@@ -351,14 +365,10 @@ def new_membership(incoming_id=None, number=None):
         billing=True,
         price=app.config['MEMBERSHIP_PRICE_KR'] * 100)
 
+    update_event(event_id=event_id, outgoing_id=outgoing_id)
+
     app.logger.info(
         "New membership requested by number:%s, activation code sent", number)
-
-    log_event(
-        action='new_membership',
-        incoming_id=incoming_id,
-        outgoing_id=outgoing_id,
-        activation_code=activation_code)
 
     return 'OK'
 
@@ -400,7 +410,7 @@ def inside_code_purchase_date():
     purchase_date = get_activation_code_purchase_date(number, activation_code)
 
     app.logger.info(
-        'Checked purchase date for number=%s activation_code=%s purchase_date=%s',
+        'Checked purchase date for number:%s activation_code:%s purchase_date:%s',
         number, activation_code, purchase_date)
 
     return purchase_date or ''
@@ -413,7 +423,7 @@ def incoming():
     for key in ('msgid', 'msisdn', 'msg', 'mms', 'mmsdata', 'shortcode',
                 'mcc', 'mnc', 'pricegroup', 'keyword', 'keywordid',
                 'errorcode', 'errormessage', 'registered'):
-        args[key] = request.args.get(key, None)
+        args[key] = request.args.get(key)
 
     app.logger.debug("Incoming, args: %s", args)
 
@@ -472,20 +482,25 @@ def incoming():
 
 @app.route('/sendega-dlr')
 def dlr():
-    args = {'ip': request.remote_addr}
+    args = {}
+    real_ip = request.headers.get('X-Real-IP')
+    args['ip'] = real_ip or request.remote_addr
 
     for key in ('msgid', 'extID', 'msisdn', 'status', 'statustext',
                 'registered', 'sent', 'delivered',
                 'errorcode', 'errormessage', 'operatorerrorcode'):
-        args[key] = request.args.get(key, None)
+        args[key] = request.args.get(key)
 
     dlr_id = log_dlr(**args)
 
     # We need to check what the original message was all about
     incoming_id = args['extID']
 
-    event = query_db('SELECT * FROM event WHERE incoming_id=%s',
-                     incoming_id, one=True)
+    event = query_db("""
+        SELECT * FROM event
+        WHERE incoming_id=%s
+        AND action IN ('new_membership', 'renew_membership')
+        """, incoming_id, one=True)
 
     if not event:
         app.logger.error('Got an unknown delivery report, dlr_id=%s', dlr_id)
@@ -514,6 +529,3 @@ def main():
 
 if __name__ == '__main__':
     app.run()
-
-# For WSGI
-application = app
