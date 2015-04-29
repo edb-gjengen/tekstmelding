@@ -226,26 +226,11 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
     return 'OK'
 
 
-def notify_payment_options_new(incoming_id=None, number=None):
-    content = u"Du kan kjøpe medlemskap via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2454 (230,-)"
-
-    outgoing_id = send_sms(
-        destination=number,
-        content=content,
-        incoming_id=incoming_id)
-
-    app.logger.info("Sent SMS to number:%s with payment options (new)", number)
-
-    log_event(
-        action='notify_payment_options_new',
-        incoming_id=incoming_id,
-        outgoing_id=outgoing_id)
-
-    return 'OK'
-
-
-def notify_payment_options_renewal(incoming_id=None, number=None, user=None):
-    content = u"Ditt medlemskap er utløpt. Det kan fornyes via SnappOrder: http://snappo.com/app (200,-) eller ved å sende DNSMEDLEM til 2454 (230,-)"
+def notify_pending_new_membership(incoming_id=None, number=None, activation_code=None):
+    content = u"Hei! Du har allerede betalt for et medlemskap. Aktiver det her: https://s.neuf.no/sms/%(number)s/%(activation_code)s" % ({
+        'number': number,
+        'activation_code': activation_code,
+    })
 
     outgoing_id = send_sms(
         destination=number,
@@ -253,13 +238,12 @@ def notify_payment_options_renewal(incoming_id=None, number=None, user=None):
         incoming_id=incoming_id)
 
     app.logger.info(
-        "Sent SMS to number:%s with payment options (renewal)", number)
+        "Resent activation code for number:%s", number)
 
     log_event(
-        action='notify_payment_options_renewal',
+        action='notify_pending_new_membership',
         incoming_id=incoming_id,
-        outgoing_id=outgoing_id,
-        user_id=user['id'])
+        outgoing_id=outgoing_id)
 
     return 'OK'
 
@@ -383,6 +367,22 @@ def get_activation_code_purchase_date(number, activation_code):
     return str(row.get('timestamp')) if row else None
 
 
+def has_pending_new_membership(number):
+    # WAT
+    row = query_db("""
+        SELECT event.activation_code FROM event
+        WHERE event.incoming_id IN (
+            SELECT event.incoming_id FROM incoming, event, event AS event2
+            WHERE incoming.msisdn = %s
+            AND incoming.id = event.incoming_id
+            AND event.action = 'new_membership'
+            AND event.timestamp > DATE_SUB(event.timestamp, INTERVAL 1 YEAR)
+            AND event2.incoming_id = event.incoming_id
+            AND event2.action = 'new_membership_delivered')
+        AND activation_code IS NOT NULL""", [number], one=True)
+    return row.get('activation_code') if row else None
+
+
 @app.route('/inside-code-purchase-date')
 def inside_code_purchase_date():
     number = request.args.get('number')
@@ -444,25 +444,19 @@ def incoming():
     if user:
         expired = get_inside().user_is_expired(user)
 
-        if keyword == 'DNS':
-            if not expired:
-                return notify_valid_membership(
-                    incoming_id=incoming_id, number=msisdn, user=user)
-            elif expired:
-                return notify_payment_options_renewal(
-                    incoming_id=incoming_id, number=msisdn, user=user)
-        elif keyword == 'DNSMEDLEM':
-            if not expired:
-                return notify_valid_membership(
-                    incoming_id=incoming_id, number=msisdn, user=user)
-            elif expired:
-                return renew_membership(
-                    incoming_id=incoming_id, number=msisdn, user=user)
+        if not expired:
+            return notify_valid_membership(
+                incoming_id=incoming_id, number=msisdn, user=user)
+        elif expired:
+            return renew_membership(
+                incoming_id=incoming_id, number=msisdn, user=user)
     else:
-        if keyword == 'DNS':
-            return notify_payment_options_new(
-                incoming_id=incoming_id, number=msisdn)
-        elif keyword == 'DNSMEDLEM':
+        activation_code = has_pending_new_membership(msisdn)
+
+        if activation_code:
+            return notify_pending_new_membership(
+                incoming_id=incoming_id, number=msisdn, activation_code=activation_code)
+        else:
             return new_membership(
                 incoming_id=incoming_id, number=msisdn)
 
