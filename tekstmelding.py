@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
-from flask import Flask, request, g, abort
+from flask import Flask, request, g, abort, jsonify
 import MySQLdb
 import MySQLdb.cursors
 import datetime
@@ -380,6 +379,10 @@ def has_pending_new_membership(number):
             AND event2.incoming_id = event.incoming_id
             AND event2.action = 'new_membership_delivered')
         AND activation_code IS NOT NULL""", [number], one=True)
+
+    # What about card_number,phonenumber-tuples from kassa.neuf.no?
+    # TODO: lookup phone number-bound-memberships from kassa, not from incoming sms-s
+    # TODO: or should the place calling this function check an inside-table?
     return row.get('activation_code') if row else None
 
 
@@ -403,6 +406,53 @@ def inside_code_purchase_date():
         number, activation_code, purchase_date)
 
     return purchase_date or ''
+
+
+@app.route('/kassa-pending-membership')
+def kassa_pending_membership():
+    """ Checks has_pending_new_membership on specified number and returns activation code and purchase date. """
+    number = request.args.get('number')
+    api_key = request.args.get('api_key')
+
+    if api_key != app.config['INSIDE_API_KEY']:
+        abort(403)  # Forbidden
+
+    if number is None or len(number) == 0:
+        return jsonify(**{'error': 'Missing or empty param number'})
+
+    if number[0] == '+':
+        number = number.replace('+', '')
+
+    if not number.isdigit():
+        return jsonify(**{'error': "Param number is not numerical '{}'".format(number)})
+
+    activation_code = has_pending_new_membership(number)
+    if activation_code is None:
+        return jsonify(**{'result': None})
+
+    result = {
+        'number': number,
+        'activation_code': activation_code,
+        'purchase_date': get_activation_code_purchase_date(number, activation_code) if activation_code else None
+    }
+    return jsonify(**{'result': result})
+
+
+@app.route('/kassa-add-pending-membership')
+def kassa_add_pending_membership():
+    """ Adds a pending membership to specified number """
+    api_key = request.args.get('api_key')
+    data = request.get_json()
+    number = data['number']
+
+    if api_key != app.config['INSIDE_API_KEY']:
+        abort(403)  # Forbidden
+
+    app.logger.debug("Kassa add pending, number: %s", number)
+
+    # TODO: insert event new_kassa_membership or renew_kassa_membership
+    result = 'TODO: Not implemented'
+    return jsonify(**{'result': result})
 
 
 @app.route('/sendega-incoming', methods=['POST'])
