@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from flask import Flask, request, g, abort, jsonify
+from flask import Flask, request, g, abort, jsonify, render_template
 import MySQLdb
 import MySQLdb.cursors
 import datetime
@@ -408,7 +408,7 @@ def inside_code_purchase_date():
     return purchase_date or ''
 
 
-@app.route('/kassa-pending-membership')
+@app.route('/kassa/pending-membership')
 def kassa_pending_membership():
     """ Checks has_pending_new_membership on specified number and returns activation code and purchase date. """
     number = request.args.get('number')
@@ -438,21 +438,47 @@ def kassa_pending_membership():
     return jsonify(**{'result': result})
 
 
-@app.route('/kassa-add-pending-membership')
-def kassa_add_pending_membership():
-    """ Adds a pending membership to specified number """
+@app.route('/kassa/notify-new-card', methods=['POST'])
+def kassa_notify_new_card():
+    """ Notify user Adds a pending membership to specified number """
     api_key = request.args.get('api_key')
+
     data = request.get_json()
-    number = data['number']
+    phone_number = data.get('phone_number')
+    card_number = data.get('card_number')
+    action = data.get('action')  # FIXME: not used
 
     if api_key != app.config['INSIDE_API_KEY']:
         abort(403)  # Forbidden
 
-    app.logger.debug("Kassa add pending, number: %s", number)
+    if action is None or card_number is None:
+        return jsonify(**{'error': 'Missing required param action or card_number'}), 400
 
-    # TODO: insert event new_kassa_membership or renew_kassa_membership
-    result = 'TODO: Not implemented'
-    return jsonify(**{'result': result})
+    if phone_number is None or len(phone_number) == 0:
+        return jsonify(**{'error': 'Missing or empty param phone_number'}), 400
+
+    if phone_number[0] == '+':
+        number = phone_number.replace('+', '')
+    else:
+        number = phone_number
+
+    if not number.isdigit():
+        return jsonify(**{'error': "Param number is not numerical '{}'".format(number)}), 400
+
+    log_msg = "Kassa notify new card, number: {}, card_number: {}".format(number, card_number)
+    app.logger.debug(log_msg)
+
+    context = {
+        'phone_number': phone_number,
+        'activation_code': card_number,
+        'action': action
+    }
+    content = render_template('notify_new_card.txt', **context)
+    outgoing_id = send_sms(destination=number, content=content)
+
+    log_event(action='notify_new_card', activation_code=card_number, outgoing_id=outgoing_id)
+
+    return jsonify(**{'result': 'SMS sent OK', 'content': content, 'outgoing_id': outgoing_id})
 
 
 @app.route('/sendega-incoming', methods=['POST'])
