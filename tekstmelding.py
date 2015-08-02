@@ -438,7 +438,7 @@ def kassa_pending_membership():
     return jsonify(**{'result': result})
 
 
-@app.route('/kassa/notify-new-card', methods=['POST'])
+@app.route('/kassa/new-membership-card', methods=['POST'])
 def kassa_notify_new_card():
     """ Notify user Adds a pending membership to specified number """
     api_key = request.args.get('api_key')
@@ -476,7 +476,7 @@ def kassa_notify_new_card():
     content = render_template('notify_new_card.txt', **context)
     outgoing_id = send_sms(destination=number, content=content)
 
-    log_event(action='notify_new_card', activation_code=card_number, outgoing_id=outgoing_id)
+    log_event(action='new_membership_card', activation_code=card_number, outgoing_id=outgoing_id)
 
     return jsonify(**{'result': 'SMS sent OK', 'content': content, 'outgoing_id': outgoing_id})
 
