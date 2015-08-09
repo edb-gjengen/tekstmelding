@@ -373,7 +373,7 @@ def has_pending_new_membership(number):
             WHERE incoming.msisdn = %s
             AND incoming.id = event.incoming_id
             AND event.action = 'new_membership'
-            AND event.timestamp > DATE_SUB(event.timestamp, INTERVAL 1 YEAR)
+            AND event.timestamp > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
             AND event2.incoming_id = event.incoming_id
             AND event2.action = 'new_membership_delivered')
         AND activation_code IS NOT NULL""", [number], one=True)
