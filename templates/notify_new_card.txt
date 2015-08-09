@@ -1,2 +1,1 @@
-{# {% if action == "new_card_no_user" %}{% endif %} #}
-Hei! Ditt nye medlemskort ({{ activation_code }}) er nå knyttet til ditt mobilnr. Aktiver medlemskapet her: https://s.neuf.no/sms/{{ phone_number|urlencode }}/{{ activation_code }}
+Hei! Ditt nye medlemskort ({{ activation_code }}) er nå knyttet til ditt mobilnummer. Aktiver medlemskapet her: https://s.neuf.no/sms/{{ phone_number|urlencode }}/{{ activation_code }}
