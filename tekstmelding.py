@@ -319,10 +319,7 @@ def renew_membership_delivered(incoming_id=None, dlr_id=None, user_id=None):
 def new_membership(incoming_id=None, number=None):
     activation_code = generate_activation_code()
 
-    content = u"Velkommen! Dette er et midlertidig medlemsbevis. Aktiver medlemskapet ditt her: https://s.neuf.no/sms/%(number)s/%(activation_code)s" % ({
-        'number': number,
-        'activation_code': activation_code,
-    })
+    content = u"Velkommen som medlem! Hent ditt medlemskort i baren på Chateau Neuf."
 
     # Log the event first, just in case the DLR is instant
     event_id = log_event(
