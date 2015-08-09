@@ -7,7 +7,7 @@ import datetime
 import logging
 import logging.config
 
-from utils import generate_activation_code
+from utils import generate_activation_code, MyJSONEncoder
 import sendega
 import inside
 
@@ -15,6 +15,7 @@ import config
 
 app = Flask(__name__)
 app.config.from_object('config')
+app.json_encoder = MyJSONEncoder
 
 if not app.debug:
     logging.config.dictConfig(app.config['LOGGING'])
@@ -580,6 +581,21 @@ def dlr():
             incoming_id=incoming_id, dlr_id=dlr_id)
 
     app.logger.error('Unhandled DLR, dlr_id=%s', dlr_id)
+
+
+@app.route('/stats/memberships/', methods=['GET'])
+def stats_memberships():
+    start_datetime = request.args.get('start', '2015-08-01')
+    sale_events = query_db("""
+        SELECT DATE_FORMAT(timestamp, '%%Y-%%m-%%d') as date,count(*) as sales FROM event
+        WHERE action IN ('new_membership_delivered', 'renew_membership_delivered')
+        AND timestamp > %s
+        GROUP BY DATE_FORMAT(timestamp, '%%Y-%%m-%%d')
+        ORDER BY timestamp""", [start_datetime])
+
+    result = {'meta': {'num_results': len(sale_events)}, 'memberships': sale_events}
+    headers = {'Access-Control-Allow-Origin': '*'}
+    return (jsonify(**result), 200, headers)
 
 
 @app.route('/')
