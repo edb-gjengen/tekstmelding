@@ -595,7 +595,7 @@ def stats_memberships():
     return (jsonify(**result), 200, headers)
 
 @app.route('/stats/memberships/series', methods=['GET'])
-def stats_memberships():
+def stats_memberships_stats():
     start_datetime = request.args.get('start', '2015-08-01')
     sale_events = query_db("""
         SELECT DATE_FORMAT(timestamp, '%%Y-%%m-%%d %%T') as date FROM event
