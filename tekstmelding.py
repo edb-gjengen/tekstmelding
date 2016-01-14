@@ -594,6 +594,18 @@ def stats_memberships():
     headers = {'Access-Control-Allow-Origin': '*'}
     return (jsonify(**result), 200, headers)
 
+@app.route('/stats/memberships/series', methods=['GET'])
+def stats_memberships():
+    start_datetime = request.args.get('start', '2015-08-01')
+    sale_events = query_db("""
+        SELECT DATE_FORMAT(timestamp, '%%Y-%%m-%%d %%T') as date FROM event
+        WHERE action IN ('new_membership_delivered', 'renew_membership_delivered')
+        AND timestamp > %s
+        ORDER BY timestamp""", [start_datetime])
+
+    result = {'meta': {'num_results': len(sale_events)}, 'memberships': sale_events}
+    headers = {'Access-Control-Allow-Origin': '*'}
+    return (jsonify(**result), 200, headers)
 
 @app.route('/')
 def main():
