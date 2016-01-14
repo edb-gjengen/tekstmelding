@@ -603,7 +603,10 @@ def stats_memberships_stats():
         AND timestamp > %s
         ORDER BY timestamp""", [start_datetime])
 
-    result = {'meta': {'num_results': len(sale_events)}, 'memberships': sale_events}
+    result = {
+        'meta': {'num_results': len(sale_events)},
+        'memberships': [x['date'] for x in sale_events]
+    }
     headers = {'Access-Control-Allow-Origin': '*'}
     return (jsonify(**result), 200, headers)
 
