@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 from flask import Flask, request, g, abort, jsonify, render_template
 import MySQLdb
 import MySQLdb.cursors
@@ -204,7 +205,7 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
     else:
         expires = str(user.get('expires'))
 
-    content = u"Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app)s" % ({
+    content = "Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app)s" % ({
         'name': name,
         'expires': expires,
         'app': 'http://snappo.com/app',
@@ -227,10 +228,11 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
 
 
 def notify_pending_new_membership(incoming_id=None, number=None, activation_code=None):
-    content = u"Hei! Du har allerede betalt for et medlemskap. Aktiver det her: https://s.neuf.no/sms/%(number)s/%(activation_code)s" % ({
-        'number': number,
-        'activation_code': activation_code,
-    })
+    activation_url = 'https://s.neuf.no/sms/{number}/{activation_code}'.format(
+        number=number,
+        activation_code=activation_code,
+    )
+    content = 'Hei! Du har allerede betalt for et medlemskap. Aktiver det her: {}'.format(activation_url)
 
     outgoing_id = send_sms(
         destination=number,
@@ -253,7 +255,7 @@ def notify_could_not_charge(incoming_id=None, dlr_id=None, number=None):
         "Attempt to charge number:%s as a response to incoming_id:%s failed",
         number, incoming_id)
 
-    content = u"Beklager, bestillingen kunne ikke gjennomføres. Spørsmål? medlem@studentersamfundet.no"
+    content = "Beklager, bestillingen kunne ikke gjennomføres. Spørsmål? medlem@studentersamfundet.no"
 
     outgoing_id = send_sms(
         destination=number,
@@ -272,9 +274,10 @@ def notify_could_not_charge(incoming_id=None, dlr_id=None, number=None):
 def renew_membership(incoming_id=None, number=None, user=None):
     new_expire = datetime.date.today() + datetime.timedelta(days=365)
 
-    content = u"Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? medlem@studentersamfundet.no" % ({
+    content = "Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? %(email)s" % ({
         'name': get_inside().get_full_name(user),
         'new_expire': str(new_expire),
+        'email': 'medlem@studentersamfundet.no'
     })
 
     # Log the event first, just in case the DLR is instant
@@ -319,7 +322,7 @@ def renew_membership_delivered(incoming_id=None, dlr_id=None, user_id=None):
 def new_membership(incoming_id=None, number=None):
     activation_code = generate_activation_code()
 
-    content = u"Velkommen som medlem! Hent ditt medlemskort i baren på Chateau Neuf."
+    content = "Velkommen som medlem! Hent ditt medlemskort i baren på Chateau Neuf."
 
     # Log the event first, just in case the DLR is instant
     event_id = log_event(
@@ -501,10 +504,10 @@ def incoming():
         # What the fuck, man, that's not a phone number, man.
         abort(400)  # Bad Request
 
-    if not keyword in ('DNS', 'DNSMEDLEM'):
+    if keyword not in ('DNS', 'DNSMEDLEM'):
         abort(400)  # Bad Request
 
-    if not shortcode in ('2454'):
+    if shortcode not in ('2454',):
         abort(400)  # Bad Request
 
     incoming_id = log_incoming(**args)
@@ -592,7 +595,8 @@ def stats_memberships():
 
     result = {'meta': {'num_results': len(sale_events)}, 'memberships': sale_events}
     headers = {'Access-Control-Allow-Origin': '*'}
-    return (jsonify(**result), 200, headers)
+    return jsonify(**result), 200, headers
+
 
 @app.route('/stats/memberships/series', methods=['GET'])
 def stats_memberships_stats():
@@ -608,7 +612,8 @@ def stats_memberships_stats():
         'memberships': [x['date'] for x in sale_events]
     }
     headers = {'Access-Control-Allow-Origin': '*'}
-    return (jsonify(**result), 200, headers)
+    return jsonify(**result), 200, headers
+
 
 @app.route('/')
 def main():
