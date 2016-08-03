@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import suds
+from suds.client import Client
 
 
 class Sendega(object):
@@ -18,7 +18,7 @@ class Sendega(object):
         self.dlr_url = dlr_url
         self.service_port = service_port
 
-        self.client = suds.client.Client(wsdl)
+        self.client = Client(wsdl)
         self.client.set_options(port=self.service_port)
 
     def create_sms(self, destination, content, billing=False,
