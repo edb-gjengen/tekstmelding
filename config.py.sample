@@ -9,11 +9,6 @@ DB_USER = ''
 DB_PASS = ''
 DB_NAME = 'tekstmelding'
 
-INSIDE_DB_HOST = 'localhost'
-INSIDE_DB_USER = ''
-INSIDE_DB_PASS = ''
-INSIDE_DB_NAME = 'inside'
-
 # Authenticates Inside
 INSIDE_API_KEY = ''
 

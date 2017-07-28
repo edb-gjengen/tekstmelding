@@ -9,7 +9,6 @@ import logging.config
 
 from utils import generate_activation_code, MyJSONEncoder
 import sendega
-import inside
 
 import config
 
@@ -86,16 +85,6 @@ def get_sendega():
             sender_billing=app.config['SENDEGA_SENDER_BILLING'],
             dlr_url=app.config['SENDEGA_DLR'])
     return g.sendega
-
-
-def get_inside():
-    if not hasattr(g, 'inside'):
-        g.inside = inside.Inside(
-            host=app.config['INSIDE_DB_HOST'],
-            username=app.config['INSIDE_DB_USER'],
-            password=app.config['INSIDE_DB_PASS'],
-            db=app.config['INSIDE_DB_NAME'])
-    return g.inside
 
 
 def log_incoming(**kwargs):
@@ -224,216 +213,6 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
         user_id=user['id'])
 
     return 'OK'
-
-
-def notify_pending_new_membership(incoming_id=None, number=None, activation_code=None):
-    content = u"Hei! Du har allerede betalt for et medlemskap. Aktiver det her: https://s.neuf.no/sms/%(number)s/%(activation_code)s" % ({
-        'number': number,
-        'activation_code': activation_code,
-    })
-
-    outgoing_id = send_sms(
-        destination=number,
-        content=content,
-        incoming_id=incoming_id)
-
-    app.logger.info(
-        "Resent activation code for number:%s", number)
-
-    log_event(
-        action='notify_pending_new_membership',
-        incoming_id=incoming_id,
-        outgoing_id=outgoing_id)
-
-    return 'OK'
-
-
-def notify_could_not_charge(incoming_id=None, dlr_id=None, number=None):
-    app.logger.warning(
-        "Attempt to charge number:%s as a response to incoming_id:%s failed",
-        number, incoming_id)
-
-    content = u"Beklager, bestillingen kunne ikke gjennomføres. Spørsmål? medlem@studentersamfundet.no"
-
-    outgoing_id = send_sms(
-        destination=number,
-        content=content,
-        incoming_id=incoming_id)
-
-    log_event(
-        action='notify_could_not_charge',
-        incoming_id=incoming_id,
-        outgoing_id=outgoing_id,
-        dlr_id=dlr_id)
-
-    return 'OK'
-
-
-def renew_membership(incoming_id=None, number=None, user=None):
-    new_expire = datetime.date.today() + datetime.timedelta(days=365)
-
-    content = u"Hei %(name)s! Ditt medlemskap er nå gyldig ut %(new_expire)s. Spørsmål? medlem@studentersamfundet.no" % ({
-        'name': get_inside().get_full_name(user),
-        'new_expire': str(new_expire),
-    })
-
-    # Log the event first, just in case the DLR is instant
-    event_id = log_event(
-        action='renew_membership',
-        incoming_id=incoming_id,
-        user_id=user['id'])
-
-    outgoing_id = send_sms(
-        destination=number,
-        content=content,
-        incoming_id=incoming_id,
-        billing=True,
-        price=app.config['MEMBERSHIP_PRICE_KR'] * 100,
-    )
-
-    update_event(event_id=event_id, outgoing_id=outgoing_id)
-
-    app.logger.info(
-        "Membership renewal requested by user_id:%s number:%s new_expire:%s",
-        user['id'], number, new_expire)
-
-    return 'OK'
-
-
-def renew_membership_delivered(incoming_id=None, dlr_id=None, user_id=None):
-    new_expire = datetime.date.today() + datetime.timedelta(days=365)
-    get_inside().renew_user(user_id=user_id, new_expire=new_expire)
-
-    app.logger.info(
-        "Response to incoming_id:%s was delivered, user_id:%s renewed to %s",
-        incoming_id, user_id, new_expire)
-
-    log_event(
-        action='renew_membership_delivered',
-        incoming_id=incoming_id,
-        dlr_id=dlr_id)
-
-    return 'OK'
-
-
-def new_membership(incoming_id=None, number=None):
-    activation_code = generate_activation_code()
-
-    content = u"Velkommen som medlem! Hent ditt medlemskort i baren på Chateau Neuf."
-
-    # Log the event first, just in case the DLR is instant
-    event_id = log_event(
-        action='new_membership',
-        incoming_id=incoming_id,
-        activation_code=activation_code)
-
-    outgoing_id = send_sms(
-        destination=number,
-        content=content,
-        incoming_id=incoming_id,
-        billing=True,
-        price=app.config['MEMBERSHIP_PRICE_KR'] * 100)
-
-    update_event(event_id=event_id, outgoing_id=outgoing_id)
-
-    app.logger.info(
-        "New membership requested by number:%s, activation code sent", number)
-
-    return 'OK'
-
-
-def new_membership_delivered(incoming_id=None, dlr_id=None):
-    app.logger.info(
-        "Response to incoming_id:%s was delivered, new membership", incoming_id)
-
-    log_event(
-        action='new_membership_delivered',
-        incoming_id=incoming_id,
-        dlr_id=dlr_id)
-
-    return 'OK'
-
-
-def get_activation_code_purchase_date(number, activation_code):
-    row = query_db("""
-        SELECT event.timestamp FROM incoming, event
-        WHERE incoming.msisdn = %s
-        AND incoming.id = event.incoming_id
-        AND event.action = 'new_membership'
-        AND event.activation_code = %s""", [number, activation_code], one=True)
-    return str(row.get('timestamp')) if row else None
-
-
-def has_pending_new_membership(number):
-    # WAT
-    row = query_db("""
-        SELECT event.activation_code FROM event
-        WHERE event.incoming_id IN (
-            SELECT event.incoming_id FROM incoming, event, event AS event2
-            WHERE incoming.msisdn = %s
-            AND incoming.id = event.incoming_id
-            AND event.action = 'new_membership'
-            AND event.timestamp > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
-            AND event2.incoming_id = event.incoming_id
-            AND event2.action = 'new_membership_delivered')
-        AND activation_code IS NOT NULL""", [number], one=True)
-
-    # What about card_number,phonenumber-tuples from kassa.neuf.no?
-    # TODO: lookup phone number-bound-memberships from kassa, not from incoming sms-s
-    # TODO: or should the place calling this function check an inside-table?
-    return row.get('activation_code') if row else None
-
-
-@app.route('/inside-code-purchase-date')
-def inside_code_purchase_date():
-    number = request.args.get('number')
-    activation_code = request.args.get('activation_code')
-    api_key = request.args.get('api_key')
-
-    if api_key != app.config['INSIDE_API_KEY']:
-        abort(403)  # Forbidden
-
-    if None in (number, activation_code):
-        return ''
-
-    purchase_date = get_activation_code_purchase_date(number, activation_code)
-
-    app.logger.info(
-        'Inside checked purchase date for '
-        'number:%s activation_code:%s purchase_date:%s',
-        number, activation_code, purchase_date)
-
-    return purchase_date or ''
-
-
-@app.route('/kassa/pending-membership')
-def kassa_pending_membership():
-    """ Checks has_pending_new_membership on specified number and returns activation code and purchase date. """
-    number = request.args.get('number')
-    api_key = request.args.get('api_key')
-
-    if api_key != app.config['INSIDE_API_KEY']:
-        abort(403)  # Forbidden
-
-    if number is None or len(number) == 0:
-        return jsonify(**{'error': 'Missing or empty param number'})
-
-    if number[0] == '+':
-        number = number.replace('+', '')
-
-    if not number.isdigit():
-        return jsonify(**{'error': "Param number is not numerical '{}'".format(number)})
-
-    activation_code = has_pending_new_membership(number)
-    if activation_code is None:
-        return jsonify(**{'result': None})
-
-    result = {
-        'number': number,
-        'activation_code': activation_code,
-        'purchase_date': get_activation_code_purchase_date(number, activation_code) if activation_code else None
-    }
-    return jsonify(**{'result': result})
 
 
 @app.route('/kassa/new-membership-card', methods=['POST'])
@@ -594,6 +373,7 @@ def stats_memberships():
     headers = {'Access-Control-Allow-Origin': '*'}
     return (jsonify(**result), 200, headers)
 
+
 @app.route('/stats/memberships/series', methods=['GET'])
 def stats_memberships_stats():
     start_datetime = request.args.get('start', '2015-08-01')
@@ -609,6 +389,7 @@ def stats_memberships_stats():
     }
     headers = {'Access-Control-Allow-Origin': '*'}
     return (jsonify(**result), 200, headers)
+
 
 @app.route('/')
 def main():
