@@ -9,13 +9,13 @@ DB_USER = ''
 DB_PASS = ''
 DB_NAME = 'tekstmelding'
 
-# Authenticates Inside
-INSIDE_API_KEY = ''
+API_KEYS = {
+    'somesecretkey': 'appname'
+}
 
 MEMBERSHIP_PRICE_KR = 1
 
-## Logging ##
-#############
+# Logging
 
 LOGGING = {
     'version': 1,
@@ -52,8 +52,7 @@ LOGGING = {
     }
 }
 
-## Sendega ##
-#############
+# Sendega
 
 # Endpoint for HTTP POST/GET
 SENDEGA_URL = 'https://smsc.sendega.com/SendSms.ashx'

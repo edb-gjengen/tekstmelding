@@ -1,14 +1,7 @@
-import string
-import random
 from datetime import datetime
 from flask.json import JSONEncoder
-
-
-def generate_activation_code(length=5):
-    chars = string.ascii_lowercase + string.digits
-    # remove easily misinterpreted chars
-    chars = chars.translate(None, '0oil1wv')
-    return ''.join(random.choice(chars) for _ in range(length))
+from flask import current_app, request, abort, g
+from functools import wraps
 
 
 class MyJSONEncoder(JSONEncoder):
@@ -17,3 +10,19 @@ class MyJSONEncoder(JSONEncoder):
             return o.isoformat()
 
         return super(MyJSONEncoder, self).default(o)
+
+
+def require_token(func):
+    @wraps(func)
+    def check_token(*args, **kwargs):
+        if 'Authorization' not in request.headers:
+            abort(401)
+        auth_type, token = request.headers.get('Authorization').split(' ')
+        if auth_type != 'Token':
+            abort(401)
+        users = current_app.config.get('API_KEYS', {})
+        if token not in users.keys():
+            abort(401)
+        g.user = users.get(token)
+        return func(*args, **kwargs)
+    return check_token

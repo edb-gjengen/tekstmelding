@@ -7,8 +7,9 @@ import datetime
 import logging
 import logging.config
 
-from utils import generate_activation_code, MyJSONEncoder
+from utils import require_token, MyJSONEncoder
 import sendega
+import dusken
 
 import config
 
@@ -145,19 +146,6 @@ def update_event(event_id, outgoing_id):
         [outgoing_id, event_id])
 
 
-def log_dlr(**kwargs):
-    return query_db("""
-        INSERT INTO dlr
-            (msgid, extID, msisdn, status, statustext,
-            registered, sent, delivered, errorcode,
-            errormessage, operatorerrorcode)
-        VALUES (
-            %(msgid)s, %(extID)s, %(msisdn)s, %(status)s, %(statustext)s,
-            %(registered)s, %(sent)s, %(delivered)s, %(errorcode)s,
-            %(errormessage)s, %(operatorerrorcode)s)
-    """, kwargs, lastrowid=True)
-
-
 def send_sms(destination, content, incoming_id=None,
              billing=False, price=0, activation_code=None):
     args = get_sendega().create_sms(
@@ -187,11 +175,11 @@ def send_sms(destination, content, incoming_id=None,
 def notify_valid_membership(incoming_id=None, number=None, user=None):
     assert user
 
-    name = get_inside().get_full_name(user)
-    if user.get('expires_lifelong'):
+    name = dusken.get_full_name(user)
+    if user.get('is_lifelong_member'):
         expires = 'verdens undergang'
     else:
-        expires = str(user.get('expires'))
+        expires = str(user.get('last_membership').get('end_date'))
 
     content = u"Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app)s" % ({
         'name': name,
@@ -216,17 +204,13 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
 
 
 @app.route('/kassa/new-membership-card', methods=['POST'])
+@require_token
 def kassa_notify_new_card():
     """ Notify user Adds a pending membership to specified number """
-    api_key = request.args.get('api_key')
-
     data = request.get_json()
     phone_number = data.get('phone_number')
     card_number = data.get('card_number')
     action = data.get('action')  # FIXME: not used
-
-    if api_key != app.config['INSIDE_API_KEY']:
-        abort(403)  # Forbidden
 
     if action is None or card_number is None:
         return jsonify(**{'error': 'Missing required param action or card_number'}), 400
@@ -258,6 +242,32 @@ def kassa_notify_new_card():
     return jsonify(**{'result': 'SMS sent OK', 'content': content, 'outgoing_id': outgoing_id})
 
 
+@app.route('/send', methods=['POST'])
+@require_token
+def send():
+    data = request.get_json()
+    number = data.get('to')
+    message = data.get('message')
+
+    if not number or not message:
+        return jsonify(**{'error': 'Missing required param number or message'}), 400
+
+    if number[0] == '+':
+        number = number.replace('+', '')
+
+    if not number.isdigit():
+        return jsonify(**{'error': "Param number is not numerical '{}'".format(number)}), 400
+
+    app.logger.info('Sending to number={}, service={}, message={}'.format(
+        number, g.user, message))
+
+    outgoing_id = send_sms(destination=number, content=message)
+
+    log_event(action='send', outgoing_id=outgoing_id)
+
+    return jsonify(**{'result': 'sent', 'message': message, 'outgoing_id': outgoing_id})
+
+
 @app.route('/sendega-incoming', methods=['POST'])
 def incoming():
     args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
@@ -280,10 +290,10 @@ def incoming():
         # What the fuck, man, that's not a phone number, man.
         abort(400)  # Bad Request
 
-    if not keyword in ('DNS', 'DNSMEDLEM'):
+    if keyword not in ('DNS', 'DNSMEDLEM'):
         abort(400)  # Bad Request
 
-    if not shortcode in ('2454'):
+    if shortcode not in ('2454'):
         abort(400)  # Bad Request
 
     incoming_id = log_incoming(**args)
@@ -292,15 +302,13 @@ def incoming():
         "Incoming SMS from number:%s saved with id:%s",
         args['msisdn'], incoming_id)
 
-    user = get_inside().get_user_by_phone(msisdn)
+    user = dusken.get_user_by_phone(msisdn)
 
     if user:
-        expired = get_inside().user_is_expired(user)
-
-        if not expired:
+        if user.get('is_member'):
             return notify_valid_membership(
                 incoming_id=incoming_id, number=msisdn, user=user)
-        elif expired:
+        else:
             return renew_membership(
                 incoming_id=incoming_id, number=msisdn, user=user)
     else:
@@ -314,81 +322,6 @@ def incoming():
                 incoming_id=incoming_id, number=msisdn)
 
     app.logger.error('Unhandled SMS, incoming_id=%s', incoming_id)
-
-
-@app.route('/sendega-dlr', methods=['POST'])
-def dlr():
-    args = {'ip': request.headers.get('X-Real-IP') or request.remote_addr}
-
-    for key in ('msgid', 'extID', 'msisdn', 'status', 'statustext',
-                'registered', 'sent', 'delivered',
-                'errorcode', 'errormessage', 'operatorerrorcode'):
-        args[key] = request.form.get(key)
-
-    app.logger.debug("Dlr, args: %s", args)
-
-    dlr_id = log_dlr(**args)
-
-    # We need to check what the original message was all about
-    incoming_id = args['extID']
-
-    success = (args['status'] == '4')
-    if not success:
-        return notify_could_not_charge(
-            incoming_id=incoming_id, dlr_id=dlr_id, number=args['msisdn'])
-
-    event = query_db("""
-        SELECT * FROM event
-        WHERE incoming_id=%s
-        AND action IN ('new_membership', 'renew_membership')
-        """, [incoming_id], one=True)
-
-    if not event:
-        app.logger.error('Got an unknown delivery report, dlr_id=%s', dlr_id)
-        return 'what'
-
-    action = event['action']
-
-    if action == 'renew_membership':
-        return renew_membership_delivered(
-            incoming_id=incoming_id, dlr_id=dlr_id, user_id=event['user_id'])
-    elif action == 'new_membership':
-        return new_membership_delivered(
-            incoming_id=incoming_id, dlr_id=dlr_id)
-
-    app.logger.error('Unhandled DLR, dlr_id=%s', dlr_id)
-
-
-@app.route('/stats/memberships/', methods=['GET'])
-def stats_memberships():
-    start_datetime = request.args.get('start', '2015-08-01')
-    sale_events = query_db("""
-        SELECT DATE_FORMAT(timestamp, '%%Y-%%m-%%d') as date,count(*) as sales FROM event
-        WHERE action IN ('new_membership_delivered', 'renew_membership_delivered')
-        AND timestamp > %s
-        GROUP BY DATE_FORMAT(timestamp, '%%Y-%%m-%%d')
-        ORDER BY timestamp""", [start_datetime])
-
-    result = {'meta': {'num_results': len(sale_events)}, 'memberships': sale_events}
-    headers = {'Access-Control-Allow-Origin': '*'}
-    return (jsonify(**result), 200, headers)
-
-
-@app.route('/stats/memberships/series', methods=['GET'])
-def stats_memberships_stats():
-    start_datetime = request.args.get('start', '2015-08-01')
-    sale_events = query_db("""
-        SELECT DATE_FORMAT(timestamp, '%%Y-%%m-%%d %%T') as date FROM event
-        WHERE action IN ('new_membership_delivered', 'renew_membership_delivered')
-        AND timestamp > %s
-        ORDER BY timestamp""", [start_datetime])
-
-    result = {
-        'meta': {'num_results': len(sale_events)},
-        'memberships': [x['date'] for x in sale_events]
-    }
-    headers = {'Access-Control-Allow-Origin': '*'}
-    return (jsonify(**result), 200, headers)
 
 
 @app.route('/')
