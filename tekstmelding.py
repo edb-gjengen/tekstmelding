@@ -172,19 +172,9 @@ def send_sms(destination, content, incoming_id=None,
     return None
 
 
-def notify_valid_membership(incoming_id=None, number=None, user=None):
-    assert user
-
-    name = dusken.get_full_name(user)
-    if user.get('is_lifelong_member'):
-        expires = 'verdens undergang'
-    else:
-        expires = str(user.get('last_membership').get('end_date'))
-
-    content = u"Hei %(name)s! Ditt medlemskap er gyldig til %(expires)s. Last ned app: %(app)s" % ({
-        'name': name,
-        'expires': expires,
-        'app': 'http://snappo.com/app',
+def send_app_link(incoming_id=None, number=None):
+    content = u"Last ned Chateau Neuf sin app her: %(app)s" % ({
+        'app': 'https://app.neuf.no',
     })
 
     outgoing_id = send_sms(
@@ -192,54 +182,14 @@ def notify_valid_membership(incoming_id=None, number=None, user=None):
         content=content,
         incoming_id=incoming_id)
 
-    app.logger.info("Sent SMS to number:%s with proof of membership", number)
+    app.logger.info("Sent SMS to number:%s with app_link", number)
 
     log_event(
-        action='notify_valid_membership',
+        action='send_app_link',
         incoming_id=incoming_id,
-        outgoing_id=outgoing_id,
-        user_id=user['id'])
+        outgoing_id=outgoing_id)
 
     return 'OK'
-
-
-@app.route('/kassa/new-membership-card', methods=['POST'])
-@require_token
-def kassa_notify_new_card():
-    """ Notify user Adds a pending membership to specified number """
-    data = request.get_json()
-    phone_number = data.get('phone_number')
-    card_number = data.get('card_number')
-    action = data.get('action')  # FIXME: not used
-
-    if action is None or card_number is None:
-        return jsonify(**{'error': 'Missing required param action or card_number'}), 400
-
-    if phone_number is None or len(phone_number) == 0:
-        return jsonify(**{'error': 'Missing or empty param phone_number'}), 400
-
-    if phone_number[0] == '+':
-        number = phone_number.replace('+', '')
-    else:
-        number = phone_number
-
-    if not number.isdigit():
-        return jsonify(**{'error': "Param number is not numerical '{}'".format(number)}), 400
-
-    log_msg = "Kassa notify new card, number: {}, card_number: {}".format(number, card_number)
-    app.logger.debug(log_msg)
-
-    context = {
-        'phone_number': phone_number,
-        'activation_code': card_number,
-        'action': action
-    }
-    content = render_template('notify_new_card.txt', **context)
-    outgoing_id = send_sms(destination=number, content=content)
-
-    log_event(action='new_membership_card', activation_code=card_number, outgoing_id=outgoing_id)
-
-    return jsonify(**{'result': 'SMS sent OK', 'content': content, 'outgoing_id': outgoing_id})
 
 
 @app.route('/send', methods=['POST'])
@@ -302,24 +252,7 @@ def incoming():
         "Incoming SMS from number:%s saved with id:%s",
         args['msisdn'], incoming_id)
 
-    user = dusken.get_user_by_phone(msisdn)
-
-    if user:
-        if user.get('is_member'):
-            return notify_valid_membership(
-                incoming_id=incoming_id, number=msisdn, user=user)
-        else:
-            return renew_membership(
-                incoming_id=incoming_id, number=msisdn, user=user)
-    else:
-        activation_code = has_pending_new_membership(msisdn)
-
-        if activation_code:
-            return notify_pending_new_membership(
-                incoming_id=incoming_id, number=msisdn, activation_code=activation_code)
-        else:
-            return new_membership(
-                incoming_id=incoming_id, number=msisdn)
+    send_app_link(incoming_id=incoming_id, number=msisdn)
 
     app.logger.error('Unhandled SMS, incoming_id=%s', incoming_id)
 
