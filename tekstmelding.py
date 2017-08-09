@@ -196,6 +196,7 @@ def send_app_link(incoming_id=None, number=None):
 @require_token
 def send():
     data = request.get_json()
+    app.logger.debug('/send got payload: {!r}'.format(data))
     number = data.get('to')
     message = data.get('message')
 
