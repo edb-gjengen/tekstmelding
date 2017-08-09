@@ -4,6 +4,7 @@
 ## Setup environment
 	$ python3 -m venv venv
 	$ . venv/bin/activate
+	(venv)$ pip install -U pip wheel
 	(venv)$ pip install -r requirements.txt
 
 ## Create a config file
