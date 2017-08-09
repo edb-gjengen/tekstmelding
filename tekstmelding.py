@@ -252,7 +252,7 @@ def incoming():
         "Incoming SMS from number:%s saved with id:%s",
         args['msisdn'], incoming_id)
 
-    send_app_link(incoming_id=incoming_id, number=msisdn)
+    return send_app_link(incoming_id=incoming_id, number=msisdn)
 
     app.logger.error('Unhandled SMS, incoming_id=%s', incoming_id)
 
